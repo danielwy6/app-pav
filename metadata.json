@@ -1,0 +1,8 @@
+{
+  "name": "PavInspect - Fiscalização de Pavimento",
+  "description": "Aplicativo técnico para fiscalização de manutenção em pavimento de pedra tosca com suporte offline, GPS e registro fotográfico.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}

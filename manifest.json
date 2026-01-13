@@ -1,0 +1,23 @@
+
+{
+  "name": "PavInspect - Horizonte",
+  "short_name": "PavInspect",
+  "description": "Fiscalização de Pavimentação - Prefeitura de Horizonte",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1d4ed8",
+  "theme_color": "#1d4ed8",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
