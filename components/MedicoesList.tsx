@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'https://esm.sh/react@19.0.0';
-import * as Lucide from 'https://esm.sh/lucide-react@0.460.0';
-import { db } from '../db.ts';
-import { Medicao, Contrato, AppView, AppState, Rua, Trecho, ServicoComplementar } from '../types.ts';
+import React, { useState, useEffect } from 'react';
+import { db } from '../db';
+import { Medicao, Contrato, AppView, AppState } from '../types';
+import { Plus, ChevronRight, Calendar, Trash2 } from 'lucide-react';
 
 interface MedicoesListProps {
   contratoId: string;
@@ -12,70 +12,79 @@ interface MedicoesListProps {
 const MedicoesList: React.FC<MedicoesListProps> = ({ contratoId, onNavigate }) => {
   const [medicoes, setMedicoes] = useState<Medicao[]>([]);
   const [contrato, setContrato] = useState<Contrato | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
 
-  const load = async () => {
-    const [c, all] = await Promise.all([
-      db.getById<Contrato>('contratos', contratoId),
-      db.getAll<Medicao>('medicoes')
-    ]);
+  useEffect(() => {
+    loadData();
+  }, [contratoId]);
+
+  const loadData = async () => {
+    const c = await db.getById<Contrato>('contratos', contratoId);
     if (c) setContrato(c);
+
+    const all = await db.getAll<Medicao>('medicoes');
     setMedicoes(all.filter(m => m.contratoId === contratoId));
   };
 
-  useEffect(() => { load(); }, [contratoId]);
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Confirmar exclusão desta medição e tudo vinculado?")) return;
-    setDeleting(id);
-    
-    // UI Optimistic: Remove da lista visual antes de terminar no banco
-    setMedicoes(prev => prev.filter(m => m.id !== id));
-
-    try {
-      const ruas = (await db.getAll<Rua>('ruas')).filter(r => r.medicaoId === id);
-      const trechos = await db.getAll<Trecho>('trechos');
-      const servicos = await db.getAll<ServicoComplementar>('servicos');
-
-      for (const r of ruas) {
-        for (const t of trechos.filter(t => t.ruaId === r.id)) await db.delete('trechos', t.id);
-        for (const s of servicos.filter(s => s.ruaId === r.id)) await db.delete('servicos', s.id);
-        await db.delete('ruas', r.id);
-      }
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm("Excluir medição?")) {
       await db.delete('medicoes', id);
-    } catch (e) {
-      alert("Erro ao excluir. Restaurando lista...");
-      load();
-    } finally {
-      setDeleting(null);
+      loadData();
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center bg-white p-4 rounded-3xl border shadow-sm">
-        <div>
-          <p className="text-[10px] font-black text-slate-400 uppercase">Contrato Nº</p>
-          <h2 className="text-xl font-black text-blue-700">{contrato?.numero || '...'}</h2>
+      {contrato && (
+        <div className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className="bg-blue-600 text-white p-3 rounded-2xl">
+             <Calendar size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contrato em Foco</p>
+            <h2 className="font-black text-slate-800 text-xl tracking-tight">Nº {contrato.numero}</h2>
+          </div>
         </div>
-        <button onClick={()=>onNavigate('FORM_MEDICAO', {selectedContratoId: contratoId})} className="bg-blue-600 text-white p-3 rounded-2xl shadow-lg active:scale-95 transition-all">
-          <Lucide.Plus size={20}/>
+      )}
+
+      <div className="flex justify-between items-center px-1">
+        <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{medicoes.length} Medições Processadas</p>
+        <button 
+          onClick={() => onNavigate('FORM_MEDICAO', { selectedContratoId: contratoId })}
+          className="bg-blue-600 text-white flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-xs shadow-lg active:scale-95 transition-transform"
+        >
+          <Plus size={16} /> Nova Medição
         </button>
       </div>
 
-      <div className="grid gap-3">
-        {medicoes.map(m => (
-          <div key={m.id} className={`bg-white p-4 rounded-[28px] border flex items-center justify-between shadow-sm transition-opacity ${deleting === m.id ? 'opacity-30' : ''}`}>
-            <div onClick={()=>onNavigate('RUAS', {selectedMedicaoId: m.id})} className="flex-1">
-              <h3 className="font-black text-slate-800 uppercase text-sm">Medição {m.numero}</h3>
-              <p className="text-[10px] font-bold text-slate-400">{m.periodo}</p>
+      {medicoes.length === 0 ? (
+        <div className="text-center py-16 px-10 flex flex-col items-center gap-3 bg-white/50 rounded-[40px] border-2 border-dashed border-slate-200">
+           <Calendar size={40} className="text-slate-200" />
+           <p className="text-slate-400 text-sm font-bold">Nenhuma medição para este contrato.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {medicoes.map(m => (
+            <div key={m.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between group active:bg-slate-50 transition-colors">
+              <div onClick={() => onNavigate('RUAS', { selectedMedicaoId: m.id })} className="flex-1 cursor-pointer flex items-center gap-4">
+                <div className="bg-slate-100 text-slate-500 p-3 rounded-2xl">
+                  <Calendar size={24} />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tight">Medição #{m.numero}</h3>
+                  <p className="text-[10px] text-blue-600 font-bold uppercase mt-0.5 tracking-wider">Realizada em: {m.periodo}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={(e) => handleDelete(e, m.id)} className="p-3 text-slate-300 hover:text-red-500 active:bg-red-50 rounded-xl transition-colors">
+                  <Trash2 size={20} />
+                </button>
+                <ChevronRight size={24} className="text-slate-200" />
+              </div>
             </div>
-            <button onClick={()=>handleDelete(m.id)} className="p-3 text-red-500 hover:bg-red-50 rounded-2xl">
-              {deleting === m.id ? <Lucide.Loader2 size={18} className="animate-spin"/> : <Lucide.Trash2 size={18}/>}
-            </button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

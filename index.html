@@ -3,63 +3,72 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#1d4ed8">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="./manifest.json">
-    <link rel="icon" href="https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-32x32.png">
-    <title>PavInspect - Horizonte</title>
-    
-    <!-- Tailwind e Leaflet carregados globalmente para cache do SW -->
+    <link rel="manifest" href="manifest.json">
+    <title>PavInspect</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
     <style>
         body {
             -webkit-tap-highlight-color: transparent;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f8fafc;
-            user-select: none;
         }
-        #root:empty::before {
-            content: "";
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            width: 40px;
-            height: 40px;
-            margin: -20px 0 0 -20px;
-            border: 4px solid #e2e8f0;
-            border-top-color: #1d4ed8;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        
+        .map-container {
+            width: 100%;
+            height: 100%;
+            min-height: 300px;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .pdf-export-mode {
+            background: white !important;
+            color: black !important;
+            width: 800px !important;
+            margin: 0 !important;
+            padding: 40px !important;
+        }
+
+        @media print {
+            @page { margin: 0.5cm; size: portrait; }
+            html, body, #root, main {
+                overflow: visible !important;
+                height: auto !important;
+                position: static !important;
+            }
+            header, nav, .print-hidden { display: none !important; }
+            #printable-report {
+                display: block !important;
+                width: 100% !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+        }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "leaflet": "https://esm.sh/leaflet@^1.9.4",
-    "jspdf": "https://esm.sh/jspdf@^4.0.0",
-    "jszip": "https://esm.sh/jszip@^3.10.1"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "jszip": "https://esm.sh/jszip@^3.10.1",
+    "leaflet": "https://esm.sh/leaflet@1.9.4",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "jspdf": "https://esm.sh/jspdf@2.5.1"
   }
 }
 </script>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
     <script>
+        // Alterado para caminho relativo para evitar erro de Cross-Origin no ambiente de Preview
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js', { scope: './' })
-                    .then(reg => console.log('PWA: Service Worker Ativo'))
-                    .catch(err => console.error('PWA: Falha no SW', err));
+                navigator.serviceWorker.register('sw.js').catch(err => {
+                    console.log('Service Worker registration failed: ', err);
+                });
             });
         }
     </script>

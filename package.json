@@ -1,5 +1,5 @@
 {
-  "name": "pavinspect---horizonte",
+  "name": "pavinspect---fiscalização-de-pavimento",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.3",
     "lucide-react": "^0.562.0",
-    "leaflet": "^1.9.4",
-    "jspdf": "^4.0.0",
-    "jszip": "^3.10.1"
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "jszip": "^3.10.1",
+    "leaflet": "1.9.4",
+    "html2canvas": "1.4.1",
+    "jspdf": "2.5.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
