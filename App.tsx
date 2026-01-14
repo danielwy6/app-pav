@@ -1,83 +1,41 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  FileText, 
-  Map as MapIcon, 
-  Users, 
-  Plus, 
-  ChevronRight, 
-  ArrowLeft, 
-  LayoutDashboard,
-  ClipboardList,
-  MapPin,
-  Camera,
-  Trash2,
-  Download,
-  Search,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Navigation,
-  CloudLightning,
-  Cloud
-} from 'lucide-react';
-import { db } from './db';
-import { 
-  AppView, 
-  AppState, 
-  Contrato, 
-  Medicao, 
-  Rua, 
-  Trecho, 
-  Profissional 
-} from './types';
+import React, { useState, useEffect } from 'https://esm.sh/react@19.0.0';
+import * as Lucide from 'https://esm.sh/lucide-react@0.460.0';
+import { db } from './db.ts';
+import { AppState, AppView } from './types.ts';
 
 // Components
-import Dashboard from './components/Dashboard';
-import ContratosList from './components/ContratosList';
-import MedicoesList from './components/MedicoesList';
-import RuasList from './components/RuasList';
-import TrechosList from './components/TrechosList';
-import ServicosList from './components/ServicosList';
-import ProfissionaisList from './components/ProfissionaisList';
-import FormContrato from './components/FormContrato';
-import FormMedicao from './components/FormMedicao';
-import FormRua from './components/FormRua';
-import FormTrecho from './components/FormTrecho';
-import FormServico from './components/FormServico';
-import FormProfissional from './components/FormProfissional';
-import MapaVisualizer from './components/MapaVisualizer';
-import RelatoriosView from './components/RelatoriosView';
-import SyncView from './components/SyncView';
+import Dashboard from './components/Dashboard.tsx';
+import ContratosList from './components/ContratosList.tsx';
+import MedicoesList from './components/MedicoesList.tsx';
+import RuasList from './components/RuasList.tsx';
+import TrechosList from './components/TrechosList.tsx';
+import ServicosList from './components/ServicosList.tsx';
+import ProfissionaisList from './components/ProfissionaisList.tsx';
+import FormContrato from './components/FormContrato.tsx';
+import FormMedicao from './components/FormMedicao.tsx';
+import FormRua from './components/FormRua.tsx';
+import FormTrecho from './components/FormTrecho.tsx';
+import FormServico from './components/FormServico.tsx';
+import FormProfissional from './components/FormProfissional.tsx';
+import MapaVisualizer from './components/MapaVisualizer.tsx';
+import RelatoriosView from './components/RelatoriosView.tsx';
+import SyncView from './components/SyncView.tsx';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({ view: 'DASHBOARD' });
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Network listener
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatus);
     window.addEventListener('offline', handleStatus);
+    db.init().then(() => setLoading(false));
     return () => {
       window.removeEventListener('online', handleStatus);
       window.removeEventListener('offline', handleStatus);
     };
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        await db.init();
-      } catch (err) {
-        console.error("Failed to init DB", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    initialize();
   }, []);
 
   const navigate = (view: AppView, params: Partial<AppState> = {}) => {
@@ -89,64 +47,27 @@ const App: React.FC = () => {
     const { view } = state;
     if (view === 'MEDICOES') navigate('CONTRATOS');
     else if (view === 'RUAS') navigate('MEDICOES', { selectedMedicaoId: state.selectedMedicaoId });
-    else if (view === 'TRECHOS') navigate('RUAS', { selectedRuaId: state.selectedRuaId });
-    else if (view === 'SERVICOS') navigate('RUAS', { selectedRuaId: state.selectedRuaId });
-    else if (view.startsWith('FORM_')) {
-        if (view === 'FORM_CONTRATO') navigate('CONTRATOS');
-        if (view === 'FORM_MEDICAO') navigate('MEDICOES');
-        if (view === 'FORM_RUA') navigate('RUAS');
-        if (view === 'FORM_TRECHO') navigate('TRECHOS');
-        if (view === 'FORM_SERVICO') navigate('SERVICOS');
-        if (view === 'FORM_PROFISSIONAL') navigate('PROFISSIONAIS');
-    }
+    else if (view === 'TRECHOS' || view === 'SERVICOS') navigate('RUAS', { selectedRuaId: state.selectedRuaId });
     else navigate('DASHBOARD');
   };
 
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-blue-600 text-white flex-col gap-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent border-white"></div>
-        <p className="font-medium animate-pulse">Carregando PavInspect...</p>
-      </div>
-    );
-  }
+  if (loading) return null;
 
   return (
-    <div className="min-h-screen flex flex-col pb-20">
-      {/* Top Header */}
-      <header className="sticky top-0 z-50 bg-blue-700 text-white px-4 py-3 flex items-center justify-between shadow-md print:hidden">
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      <header className="sticky top-0 z-50 bg-blue-700 text-white px-4 py-4 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
           {state.view !== 'DASHBOARD' && (
-            <button onClick={goBack} className="p-1 -ml-1">
-              <ArrowLeft size={24} />
-            </button>
+            <button onClick={goBack} className="p-1"><Lucide.ArrowLeft size={24} /></button>
           )}
-          <h1 className="text-lg font-bold tracking-tight">
-            {state.view === 'DASHBOARD' && 'PavInspect'}
-            {state.view === 'CONTRATOS' && 'Contratos'}
-            {state.view === 'MEDICOES' && 'Medições'}
-            {state.view === 'RUAS' && 'Ruas'}
-            {state.view === 'TRECHOS' && 'Trechos de Obra'}
-            {state.view === 'SERVICOS' && 'Serviços de Meio-Fio'}
-            {state.view === 'PROFISSIONAIS' && 'Profissionais'}
-            {state.view === 'MAPA_GERAL' && 'Mapa de Campo'}
-            {state.view === 'RELATORIOS' && 'Relatórios'}
-            {state.view === 'SYNC' && 'Sincronização'}
-            {state.view === 'FORM_CONTRATO' && (state.editingId ? 'Editar Contrato' : 'Novo Contrato')}
-            {state.view === 'FORM_TRECHO' && (state.editingId ? 'Editar Trecho' : 'Novo Trecho')}
-            {state.view === 'FORM_SERVICO' && (state.editingId ? 'Editar Serviço' : 'Novo Serviço')}
-          </h1>
+          <h1 className="text-lg font-black tracking-tighter uppercase">PavInspect</h1>
         </div>
-        <div className="flex items-center gap-2">
-            <span className={`text-[10px] px-2 py-1 rounded border flex items-center gap-1 ${isOnline ? 'bg-emerald-800 border-emerald-600' : 'bg-blue-800 border-blue-600'}`}>
-                {isOnline ? <Cloud size={10} /> : <CloudLightning size={10} />}
-                {isOnline ? 'ONLINE' : 'OFFLINE'}
-            </span>
+        <div className={`text-[10px] font-bold px-2 py-1 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}`}>
+          {isOnline ? 'ONLINE' : 'OFFLINE'}
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto p-4 max-w-4xl mx-auto w-full">
+      <main className="flex-1 p-4 max-w-2xl mx-auto w-full pb-24">
         {state.view === 'DASHBOARD' && <Dashboard onNavigate={navigate} />}
         {state.view === 'CONTRATOS' && <ContratosList onNavigate={navigate} />}
         {state.view === 'MEDICOES' && <MedicoesList contratoId={state.selectedContratoId!} onNavigate={navigate} />}
@@ -166,25 +87,19 @@ const App: React.FC = () => {
         {state.view === 'FORM_PROFISSIONAL' && <FormProfissional id={state.editingId} onSave={() => navigate('PROFISSIONAIS')} onCancel={goBack} />}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around py-2 px-1 z-50 print:hidden">
-        <NavButton active={state.view === 'DASHBOARD'} icon={<LayoutDashboard size={22} />} label="Home" onClick={() => navigate('DASHBOARD')} />
-        <NavButton active={state.view === 'CONTRATOS'} icon={<ClipboardList size={22} />} label="Obras" onClick={() => navigate('CONTRATOS')} />
-        <NavButton active={state.view === 'SYNC'} icon={<CloudLightning size={22} />} label="Sync" onClick={() => navigate('SYNC')} />
-        <NavButton active={state.view === 'PROFISSIONAIS'} icon={<Users size={22} />} label="Equipe" onClick={() => navigate('PROFISSIONAIS')} />
-        <NavButton active={state.view === 'RELATORIOS'} icon={<FileText size={22} />} label="Relatórios" onClick={() => navigate('RELATORIOS')} />
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t p-2 flex justify-around shadow-2xl z-50">
+        <NavBtn act={state.view==='DASHBOARD'} icon={<Lucide.LayoutDashboard size={20}/>} lab="Início" onClick={()=>navigate('DASHBOARD')}/>
+        <NavBtn act={state.view==='CONTRATOS'} icon={<Lucide.ClipboardList size={20}/>} lab="Obras" onClick={()=>navigate('CONTRATOS')}/>
+        <NavBtn act={state.view==='MAPA_GERAL'} icon={<Lucide.MapPin size={20}/>} lab="Mapa" onClick={()=>navigate('MAPA_GERAL')}/>
+        <NavBtn act={state.view==='SYNC'} icon={<Lucide.Cloud size={20}/>} lab="Sinc" onClick={()=>navigate('SYNC')}/>
       </nav>
     </div>
   );
 };
 
-const NavButton: React.FC<{ active: boolean, icon: React.ReactNode, label: string, onClick: () => void }> = ({ active, icon, label, onClick }) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors ${active ? 'text-blue-600 bg-blue-50' : 'text-slate-500'}`}
-  >
-    {icon}
-    <span className="text-[10px] font-medium">{label}</span>
+const NavBtn = ({act, icon, lab, onClick}: any) => (
+  <button onClick={onClick} className={`flex flex-col items-center p-2 rounded-xl ${act ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}>
+    {icon} <span className="text-[10px] font-bold mt-1 uppercase">{lab}</span>
   </button>
 );
 
