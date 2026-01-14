@@ -7,32 +7,19 @@
     <meta name="theme-color" content="#1d4ed8">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="/assets/manifest-KMYzvcKq.json">
-    <link rel="icon" href="https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-32x32.png">
+    <meta name="apple-mobile-web-app-title" content="PavInspect">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" href="https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-32x32.png">
+    <link rel="apple-touch-icon" href="https://prefeitura.horizonte.ce.gov.br/wp-content/uploads/2021/04/cropped-favicon-192x192.png">
+    
     <title>PavInspect - Horizonte</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-
-
-    <style>
-        :root { --ion-safe-area-top: env(safe-area-inset-top); }
-        body {
-            -webkit-tap-highlight-color: transparent;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f8fafc;
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden;
-            user-select: none;
-        }
-        #root { min-height: 100vh; display: flex; flex-direction: column; }
-        .active-scale:active { transform: scale(0.96); }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-    </style>
-<link rel="stylesheet" href="/index.css">
     <script type="importmap">
 {
   "imports": {
@@ -44,13 +31,39 @@
     "jspdf": "https://esm.sh/jspdf@2.5.1",
     "jszip": "https://esm.sh/jszip@3.10.1",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/index-pD97g4m9.js"></script>
+
+    <style>
+        :root { --ion-safe-area-top: env(safe-area-inset-top); }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            user-select: none;
+            min-height: 100vh;
+        }
+        #root { min-height: 100vh; display: flex; flex-direction: column; }
+    </style>
 </head>
 <body>
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registrado com sucesso!', reg.scope))
+                    .catch(err => console.log('Falha ao registrar SW:', err));
+            });
+        }
+    </script>
 </body>
 </html>
