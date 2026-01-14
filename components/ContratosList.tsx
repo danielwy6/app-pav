@@ -1,79 +1,75 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from '../db';
-import { Contrato, AppView, AppState } from '../types';
-import { Plus, ChevronRight, FileText, Trash2 } from 'lucide-react';
+import * as Lucide from 'lucide-react';
+import { db } from '../db.ts';
+import { Contrato, AppView, AppState } from '../types.ts';
 
-interface ContratosListProps {
-  onNavigate: (view: AppView, params?: Partial<AppState>) => void;
-}
+const ContratosList: React.FC<{ onNavigate: any }> = ({ onNavigate }) => {
+  const [items, setItems] = useState<Contrato[]>([]);
+  const [loading, setLoading] = useState(true);
 
-const ContratosList: React.FC<ContratosListProps> = ({ onNavigate }) => {
-  const [contratos, setContratos] = useState<Contrato[]>([]);
-
-  useEffect(() => {
-    loadContratos();
-  }, []);
-
-  const loadContratos = async () => {
-    const list = await db.getAll<Contrato>('contratos');
-    setContratos(list);
+  const load = async () => {
+    setLoading(true);
+    setItems(await db.getAll('contratos'));
+    setLoading(false);
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm("Deseja realmente excluir este contrato?")) {
-      await db.delete('contratos', id);
-      loadContratos();
+  useEffect(() => { load(); }, []);
+
+  const onDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation(); // ESSENCIAL: Impede que o clique "vaze" para o card
+    
+    if (confirm("⚠️ APAGAR CONTRATO?\n\nEsta ação excluirá permanentemente este contrato e TODAS as medições e fotos vinculadas.")) {
+      setLoading(true);
+      await db.deleteContratoCascade(id);
+      await load();
     }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">{contratos.length} Contratos Registrados</p>
-        <button 
-          onClick={() => onNavigate('FORM_CONTRATO')}
-          className="bg-blue-600 text-white flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm shadow-md active:scale-95 transition-transform"
-        >
-          <Plus size={18} /> Novo Contrato
+        <h2 className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Contratos Ativos</h2>
+        <button onClick={() => onNavigate('FORM_CONTRATO')} className="bg-blue-600 text-white px-5 py-3 rounded-full font-black text-xs shadow-lg active:scale-95 transition-all flex items-center gap-2">
+          <Lucide.Plus size={18} /> Novo Contrato
         </button>
       </div>
 
-      {contratos.length === 0 ? (
-        <div className="text-center py-20 px-10 flex flex-col items-center gap-4 bg-white rounded-2xl border-2 border-dashed border-slate-200">
-           <FileText size={48} className="text-slate-200" />
-           <p className="text-slate-400 text-sm">Nenhum contrato registrado.</p>
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {contratos.map(c => (
+      <div className="grid gap-3">
+        {items.length === 0 && !loading ? (
+          <div className="py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-slate-100 flex flex-col items-center opacity-50">
+            <Lucide.FileText size={48} className="mb-4" />
+            <p className="font-black text-xs uppercase">Nenhum contrato encontrado</p>
+          </div>
+        ) : (
+          items.map(item => (
             <div 
-              key={c.id} 
-              onClick={() => onNavigate('MEDICOES', { selectedContratoId: c.id })}
-              className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between group active:bg-slate-50 transition-colors cursor-pointer"
+              key={item.id} 
+              onClick={() => onNavigate('MEDICOES', { selectedContratoId: item.id })}
+              className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex items-center justify-between active:bg-slate-50 transition-colors cursor-pointer"
             >
               <div className="flex items-center gap-4">
-                <div className="bg-blue-100 text-blue-600 p-3 rounded-xl">
-                    <FileText size={24} />
-                </div>
+                <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl"><Lucide.FileText size={24} /></div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contrato</p>
-                  <h3 className="font-bold text-slate-800 text-lg">Nº {c.numero}</h3>
+                  <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-none mb-1">Nº {item.numero}</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Contrato de Manutenção</p>
                 </div>
               </div>
-              
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={(e) => handleDelete(e, c.id)}
-                  className="p-2 text-slate-300 hover:text-red-500 active:bg-red-50 rounded-lg transition-colors"
-                >
-                  <Trash2 size={20} />
-                </button>
-                <ChevronRight size={24} className="text-slate-300" />
-              </div>
+              <button 
+                onClick={(e) => onDelete(e, item.id)} 
+                className="p-4 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-all"
+              >
+                <Lucide.Trash2 size={22} />
+              </button>
             </div>
-          ))}
+          ))
+        )}
+      </div>
+
+      {loading && (
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-[200] flex items-center justify-center">
+          <Lucide.Loader2 className="animate-spin text-blue-600" size={40} />
         </div>
       )}
     </div>
