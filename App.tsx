@@ -4,7 +4,6 @@ import * as Lucide from 'lucide-react';
 import { db } from './db.ts';
 import { AppState, AppView } from './types.ts';
 
-// Componentes
 import Dashboard from './components/Dashboard.tsx';
 import ContratosList from './components/ContratosList.tsx';
 import MedicoesList from './components/MedicoesList.tsx';
@@ -31,11 +30,7 @@ const App: React.FC = () => {
     const handleStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatus);
     window.addEventListener('offline', handleStatus);
-    
-    db.init()
-      .then(() => setLoading(false))
-      .catch(() => setLoading(false));
-
+    db.init().then(() => setLoading(false)).catch(() => setLoading(false));
     return () => {
       window.removeEventListener('online', handleStatus);
       window.removeEventListener('offline', handleStatus);
@@ -47,7 +42,6 @@ const App: React.FC = () => {
       ...prev, 
       ...params, 
       view,
-      // Se estiver editando, limpa o ID se a view mudar
       editingId: params.editingId || (params.view !== prev.view ? undefined : prev.editingId)
     }));
     window.scrollTo(0, 0);
@@ -71,10 +65,7 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <Lucide.Loader2 className="animate-spin text-blue-600" size={40} />
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Carregando PavInspect...</p>
-        </div>
+        <Lucide.Loader2 className="animate-spin text-blue-600" size={40} />
       </div>
     );
   }

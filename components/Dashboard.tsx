@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../db';
-import { AppView, AppState } from '../types';
+import { AppView, AppState, Trecho, Rua } from '../types';
 import { 
   Plus, 
   MapIcon, 
@@ -9,25 +9,38 @@ import {
   FileBarChart, 
   Clock, 
   CloudLightning, 
-  ChevronRight 
+  ChevronRight,
+  MapPin
 } from 'lucide-react';
 
 interface DashboardProps {
   onNavigate: (view: AppView, params?: Partial<AppState>) => void;
 }
 
+interface RecentActivity {
+  id: string;
+  ruaNome: string;
+  area: number;
+  data: string;
+  ruaId: string;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [stats, setStats] = useState({ contratos: 0, trechos: 0, areaTotal: 0, dirty: 0 });
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
 
   useEffect(() => {
     const loadStats = async () => {
-      const c = await db.getAll('contratos');
-      const t = await db.getAll<any>('trechos');
-      const m = await db.getDirty('medicoes');
-      const r = await db.getDirty('ruas');
-      const p = await db.getDirty('profissionais');
-      const cd = await db.getDirty('contratos');
-      const td = await db.getDirty('trechos');
+      const [c, t, m, r, p, cd, td, todasRuas] = await Promise.all([
+        db.getAll('contratos'),
+        db.getAll<Trecho>('trechos'),
+        db.getDirty('medicoes'),
+        db.getDirty('ruas'),
+        db.getDirty('profissionais'),
+        db.getDirty('contratos'),
+        db.getDirty('trechos'),
+        db.getAll<Rua>('ruas')
+      ]);
       
       const area = t.reduce((acc, curr) => acc + (curr.area || 0), 0);
       setStats({ 
@@ -36,6 +49,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         areaTotal: area,
         dirty: m.length + r.length + p.length + cd.length + td.length
       });
+
+      // Processar atividade recente
+      const sortedTrechos = [...t].sort((a, b) => {
+          const dateA = new Date(a.updatedAt || 0).getTime();
+          const dateB = new Date(b.updatedAt || 0).getTime();
+          return dateB - dateA;
+      }).slice(0, 3);
+
+      const activity = sortedTrechos.map(tr => {
+          const rua = todasRuas.find(ru => ru.id === tr.ruaId);
+          return {
+              id: tr.id,
+              ruaNome: rua?.nome || 'Rua não identificada',
+              area: tr.area,
+              data: tr.data,
+              ruaId: tr.ruaId
+          };
+      });
+      setRecentActivity(activity);
     };
     loadStats();
   }, []);
@@ -124,7 +156,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             <Clock size={16} className="text-blue-600" /> Atividade Recente
         </h3>
         <div className="space-y-3">
-          <p className="text-[10px] text-slate-400 text-center py-6 font-bold uppercase italic tracking-tighter">Nenhum registro recente nas últimas 24h.</p>
+          {recentActivity.length === 0 ? (
+            <p className="text-[10px] text-slate-400 text-center py-6 font-bold uppercase italic tracking-tighter">Nenhum registro recente nas últimas 24h.</p>
+          ) : (
+            recentActivity.map(act => (
+              <div 
+                key={act.id} 
+                onClick={() => onNavigate('TRECHOS', { selectedRuaId: act.ruaId })}
+                className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl active:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-100 text-blue-600 p-2 rounded-lg"><MapPin size={16} /></div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-800 uppercase leading-none mb-1 truncate max-w-[150px]">{act.ruaNome}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">{act.data}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                   <p className="text-[11px] font-black text-blue-600">{act.area.toFixed(2)} m²</p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -3,26 +3,32 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db';
 import { 
   CloudLightning, 
-  RefreshCcw, 
-  CheckCircle, 
-  AlertCircle, 
+  Download, 
+  Upload, 
+  Share2, 
+  ShieldCheck, 
   Database, 
-  Clock, 
-  Server,
+  AlertCircle,
   Loader2,
   CheckCircle2,
-  ArrowUpCircle,
-  Download,
-  Upload,
-  ShieldCheck,
-  FileWarning
+  FileJson,
+  ArrowUpCircle
 } from 'lucide-react';
 
+// Define interface for sync counts to ensure proper type inference
+interface SyncCounts {
+  contratos: number;
+  medicoes: number;
+  ruas: number;
+  trechos: number;
+  profissionais: number;
+}
+
 const SyncView: React.FC = () => {
-  const [counts, setCounts] = useState({ contratos: 0, medicoes: 0, ruas: 0, trechos: 0, profissionais: 0 });
+  // Use explicit type for state
+  const [counts, setCounts] = useState<SyncCounts>({ contratos: 0, medicoes: 0, ruas: 0, trechos: 0, profissionais: 0 });
   const [syncing, setSyncing] = useState(false);
-  const [backingUp, setBackingUp] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
+  const [processing, setProcessing] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,60 +60,36 @@ const SyncView: React.FC = () => {
     });
   };
 
-  const addLog = (msg: string) => {
-    setLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
-  };
-
-  const runSync = async () => {
-    if (!navigator.onLine) {
-      alert("Aparelho offline. Conecte-se à internet para sincronizar.");
-      return;
-    }
-
-    setSyncing(true);
-    setLog([]);
-    addLog("Iniciando sincronização técnica...");
-
-    try {
-      // Simulação de sincronização com o servidor
-      const stores = ['profissionais', 'contratos', 'medicoes', 'ruas', 'trechos'];
-      for (const s of stores) {
-        const items = await db.getDirty<any>(s);
-        if (items.length > 0) {
-          addLog(`Enviando ${items.length} itens de ${s}...`);
-          await new Promise(r => setTimeout(r, 1000));
-          for (const item of items) await db.save(s, item, true);
-        }
-      }
-
-      addLog("Sincronização concluída com sucesso!");
-      await loadDirtyCounts();
-    } catch (err) {
-      addLog("ERRO: Falha na comunicação.");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleExportBackup = async () => {
-    setBackingUp(true);
+  const handleExportBackup = async (share = false) => {
+    setProcessing(true);
     try {
       const data = await db.exportAllData();
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
       const date = new Date().toISOString().split('T')[0];
-      link.href = url;
-      link.download = `PAVINSPECT_BACKUP_${date}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      addLog("Arquivo de backup gerado com sucesso.");
+      const fileName = `PAVINSPECT_BACKUP_${date}.json`;
+      
+      if (share && navigator.share) {
+        const file = new File([data], fileName, { type: 'application/json' });
+        await navigator.share({
+          files: [file],
+          title: 'Backup PavInspect',
+          text: 'Arquivo de exportação de dados de fiscalização.'
+        });
+      } else {
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
-      alert("Erro ao gerar backup.");
+      console.error(err);
+      alert("Erro ao processar backup.");
     } finally {
-      setBackingUp(false);
+      setProcessing(false);
     }
   };
 
@@ -115,110 +97,130 @@ const SyncView: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm("Isso irá mesclar os dados do arquivo com o seu banco atual. Deseja continuar?")) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
+        setProcessing(true);
         const json = event.target?.result as string;
         await db.importAllData(json);
-        alert("Backup restaurado com sucesso!");
+        alert("Dados importados e mesclados com sucesso!");
         loadDirtyCounts();
-        addLog("Dados importados do arquivo de backup.");
       } catch (err) {
-        alert("Erro ao importar arquivo. Verifique se o formato é válido.");
+        alert("Erro ao importar arquivo. Verifique se o arquivo é um backup válido.");
+      } finally {
+        setProcessing(false);
       }
     };
     reader.readAsText(file);
   };
 
-  const totalDirty = Object.values(counts).reduce((a, b) => a + b, 0);
+  // Fixed: Cast Object.values to number[] to avoid 'unknown' type errors during reduction (Fix for line 107)
+  const totalDirty = (Object.values(counts) as number[]).reduce((a: number, b: number) => a + b, 0);
 
   return (
-    <div className="space-y-6 pb-20">
-      <div className={`p-6 rounded-3xl text-white shadow-xl flex flex-col items-center text-center transition-all ${isOnline ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-slate-700'}`}>
-        <div className={`p-4 rounded-full mb-4 ${isOnline ? 'bg-white/20' : 'bg-slate-600 animate-pulse'}`}>
-            {syncing ? <Loader2 className="animate-spin" size={48} /> : <CloudLightning size={48} />}
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500">
+      {/* Status de Conexão */}
+      <div className={`p-8 rounded-[40px] text-white shadow-xl flex flex-col items-center text-center transition-all ${isOnline ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-slate-800'}`}>
+        <div className={`p-5 rounded-full mb-4 ${isOnline ? 'bg-white/20' : 'bg-slate-700 animate-pulse'}`}>
+            {processing ? <Loader2 className="animate-spin" size={48} /> : <CloudLightning size={48} />}
         </div>
-        <h2 className="text-2xl font-black uppercase tracking-tight">{isOnline ? 'Nuvem Conectada' : 'Modo Offline'}</h2>
-        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest mt-2">
-            Prefeitura de Horizonte - Sistema de Fiscalização
+        <h2 className="text-2xl font-black uppercase tracking-tight">{isOnline ? 'Nuvem Ativa' : 'Trabalho Offline'}</h2>
+        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest mt-2 px-6">
+            O GPS continua funcionando. Seus dados estão salvos localmente no aparelho.
         </p>
       </div>
 
+      {/* Seção de Backup e Drive */}
       <div className="bg-white rounded-[32px] shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-black text-slate-700 text-xs flex items-center gap-2 uppercase tracking-widest">
-                <ShieldCheck size={16} className="text-blue-600" /> Segurança de Dados
+                <ShieldCheck size={18} className="text-blue-600" /> Segurança & Backup
             </h3>
         </div>
-        <div className="p-6 space-y-4">
-            <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed">
-              Para evitar perda de fotos e medições em caso de perda do celular, gere um arquivo de backup e salve-o fora do aparelho (E-mail ou Drive).
-            </p>
-            <div className="grid grid-cols-2 gap-3">
+        <div className="p-6 space-y-6">
+            <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex items-start gap-3">
+              <AlertCircle className="text-blue-600 shrink-0" size={18} />
+              <p className="text-[10px] text-blue-800 font-bold uppercase leading-relaxed">
+                Exporte seus dados regularmente para o seu Google Drive para evitar perdas em caso de problemas com o celular.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
                 <button 
-                  onClick={handleExportBackup}
-                  disabled={backingUp}
-                  className="flex flex-col items-center justify-center gap-2 p-5 bg-blue-50 text-blue-700 rounded-3xl border border-blue-100 active:scale-95 transition-all"
+                  onClick={() => handleExportBackup(true)}
+                  disabled={processing}
+                  className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 shadow-lg active:scale-95 transition-all"
                 >
-                  {backingUp ? <Loader2 className="animate-spin" size={20} /> : <Download size={20} />}
-                  <span className="text-[10px] font-black uppercase tracking-widest">Gerar Backup</span>
+                  <Share2 size={18} /> Salvar no Drive / Compartilhar
                 </button>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-2 p-5 bg-slate-50 text-slate-600 rounded-3xl border border-slate-100 active:scale-95 transition-all"
-                >
-                  <Upload size={20} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Restaurar</span>
-                </button>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => handleExportBackup(false)}
+                    disabled={processing}
+                    className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 active:bg-slate-200"
+                  >
+                    <Download size={16} /> Baixar Local
+                  </button>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={processing}
+                    className="py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 border border-emerald-100 active:bg-emerald-100"
+                  >
+                    <Upload size={16} /> Importar Dados
+                  </button>
+                </div>
             </div>
             <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImportBackup} />
         </div>
       </div>
 
+      {/* Lista de Pendências */}
       <div className="bg-white rounded-[32px] shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-5 bg-slate-50 border-b border-slate-100">
+        <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
             <h3 className="font-black text-slate-700 text-xs flex items-center gap-2 uppercase tracking-widest">
-                <Database size={16} /> Pendências de Envio
+                <Database size={18} /> Dados para Enviar
             </h3>
+            {/* Fixed: totalDirty is now correctly typed as number (Fix for line 173) */}
+            {totalDirty > 0 && <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[9px] font-black">{totalDirty} ITENS</span>}
         </div>
         <div className="divide-y divide-slate-50">
-            <DirtyItem label="Contratos" count={counts.contratos} />
-            <DirtyItem label="Medições" count={counts.medicoes} />
-            <DirtyItem label="Ruas/Logradouros" count={counts.ruas} />
-            <DirtyItem label="Trechos & Fotos" count={counts.trechos} />
+            <SyncItem label="Contratos" count={counts.contratos} />
+            <SyncItem label="Medições" count={counts.medicoes} />
+            <SyncItem label="Ruas/Logradouros" count={counts.ruas} />
+            <SyncItem label="Trechos & Fotos" count={counts.trechos} />
         </div>
       </div>
 
-      <button 
-        onClick={runSync}
-        disabled={syncing || (!isOnline && totalDirty > 0)}
-        className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl shadow-blue-100 active:scale-95 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em]"
-      >
-        {syncing ? <Loader2 className="animate-spin" size={24} /> : <ArrowUpCircle size={24} />}
-        {syncing ? 'Sincronizando...' : totalDirty > 0 ? 'Sincronizar Agora' : 'Dados Atualizados'}
-      </button>
+      {/* Fixed: totalDirty is now correctly typed as number (Fix for line 183) */}
+      {totalDirty > 0 && isOnline && (
+        <button 
+          className="w-full py-6 bg-blue-600 text-white font-black rounded-[28px] shadow-xl shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em]"
+        >
+          <ArrowUpCircle size={24} /> Sincronizar com Servidor
+        </button>
+      )}
 
-      {log.length > 0 && (
-        <div className="bg-slate-900 rounded-[24px] p-5 font-mono text-[9px] text-emerald-400 h-32 overflow-y-auto space-y-1 shadow-inner border border-slate-800">
-            {log.map((entry, i) => <div key={i} className="opacity-80">{entry}</div>)}
+      {processing && (
+        <div className="fixed inset-0 z-[3000] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center gap-4">
+           <Loader2 className="animate-spin text-blue-600" size={48} />
+           <p className="font-black text-slate-800 uppercase text-xs tracking-widest">Processando Banco de Dados...</p>
         </div>
       )}
     </div>
   );
 };
 
-const DirtyItem: React.FC<{ label: string, count: number }> = ({ label, count }) => (
-  <div className="p-5 flex justify-between items-center">
-    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{label}</span>
+const SyncItem = ({ label, count }: { label: string; count: number }) => (
+  <div className="p-6 flex justify-between items-center">
+    <span className="text-xs font-bold text-slate-600 uppercase">{label}</span>
     {count > 0 ? (
         <div className="flex items-center gap-2">
-            <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[9px] font-black uppercase">{count} pendente</span>
-            <AlertCircle size={14} className="text-amber-500" />
+            <span className="text-amber-600 text-[10px] font-black uppercase tracking-tighter">Aguardando Envio</span>
+            <AlertCircle size={16} className="text-amber-500" />
         </div>
     ) : (
-        <CheckCircle2 size={18} className="text-emerald-500" />
+        <CheckCircle2 size={20} className="text-emerald-500" />
     )}
   </div>
 );

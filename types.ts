@@ -1,4 +1,3 @@
-
 export interface SyncMetadata {
   isDirty?: boolean;
   lastSyncedAt?: string;

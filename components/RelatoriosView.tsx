@@ -3,484 +3,353 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../db';
 import { Contrato, Medicao, Rua, Trecho, Profissional, ServicoComplementar } from '../types';
 import { 
-  FileText, 
   Download, 
   Loader2, 
-  Users, 
-  Calendar, 
-  ClipboardCheck,
-  FileSearch,
-  FileArchive,
-  HardHat,
-  Ruler,
-  Layers,
-  ArrowLeft,
-  CheckCircle2,
+  Layers, 
+  ArrowLeft, 
+  TrendingUp, 
+  HardHat, 
+  FileArchive, 
+  FileText, 
+  Image as ImageIcon,
+  Filter,
   ChevronRight,
-  TrendingUp,
-  MapPin,
-  Wrench,
-  RotateCcw,
-  PlusCircle
+  Printer
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 
-interface StreetGroup {
-  rua: Rua;
-  trechos: Trecho[];
-  servicos: ServicoComplementar[];
-  subtotalArea: number;
-  subtotalMeioFio: number;
-}
-
-interface ReportData {
-  contrato?: Contrato;
-  medicao?: Medicao;
-  profissionais: {
-    profissional: Profissional;
-    streets: StreetGroup[];
-    totalArea: number;
-    totalMeioFio: number;
-  }[];
-  totalGeralArea: number;
-  totalGeralMeioFio: number;
-}
+type ReportType = 'FOTOS_ZIP' | 'PRODUTIVIDADE_PDF' | 'COMPLETO_PDF';
 
 const RelatoriosView: React.FC = () => {
   const [contratos, setContratos] = useState<Contrato[]>([]);
   const [medicoes, setMedicoes] = useState<Medicao[]>([]);
+  const [ruas, setRuas] = useState<Rua[]>([]);
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   
-  const [selectedContrato, setSelectedContrato] = useState<string>('');
-  const [selectedMedicao, setSelectedMedicao] = useState<string>('');
-  const [selectedProfissional, setSelectedProfissional] = useState<string>('TODOS');
+  const [selContrato, setSelContrato] = useState<string>('TODOS');
+  const [selMedicao, setSelMedicao] = useState<string>('TODOS');
+  const [selRua, setSelRua] = useState<string>('TODOS');
+  const [selProfissional, setSelProfissional] = useState<string>('TODOS');
   
   const [loading, setLoading] = useState(false);
-  const [zipping, setZipping] = useState(false);
-  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [progress, setProgress] = useState('');
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+  useEffect(() => { loadInitialData(); }, []);
 
   const loadInitialData = async () => {
-    const [cList, pList] = await Promise.all([
+    const [cList, pList, mList, rList] = await Promise.all([
       db.getAll<Contrato>('contratos'),
-      db.getAll<Profissional>('profissionais')
+      db.getAll<Profissional>('profissionais'),
+      db.getAll<Medicao>('medicoes'),
+      db.getAll<Rua>('ruas')
     ]);
     setContratos(cList);
     setProfissionais(pList.filter(p => p.status === 'Ativo'));
+    setMedicoes(mList);
+    setRuas(rList);
   };
 
-  const handleContratoChange = async (id: string) => {
-    setSelectedContrato(id);
-    setSelectedMedicao('');
-    setReportData(null);
-    if (id) {
-      const allMedicoes = await db.getAll<Medicao>('medicoes');
-      setMedicoes(allMedicoes.filter(m => m.contratoId === id));
-    } else {
-      setMedicoes([]);
+  const filteredMedicoes = selContrato === 'TODOS' ? medicoes : medicoes.filter(m => m.contratoId === selContrato);
+  const filteredRuas = selMedicao === 'TODOS' ? ruas : ruas.filter(r => r.medicaoId === selMedicao);
+
+  const getFilteredData = async () => {
+    const allTrechos = await db.getAll<Trecho>('trechos');
+    const allServicos = await db.getAll<ServicoComplementar>('servicos');
+    const allRuas = await db.getAll<Rua>('ruas');
+    const allMeds = await db.getAll<Medicao>('medicoes');
+    const allContratos = await db.getAll<Contrato>('contratos');
+
+    let filteredTrechos = allTrechos;
+
+    if (selContrato !== 'TODOS') {
+      const medsIds = allMeds.filter(m => m.contratoId === selContrato).map(m => m.id);
+      const ruasIds = allRuas.filter(r => medsIds.includes(r.medicaoId)).map(r => r.id);
+      filteredTrechos = filteredTrechos.filter(t => ruasIds.includes(t.ruaId));
     }
+    if (selMedicao !== 'TODOS') {
+      const ruasIds = allRuas.filter(r => r.medicaoId === selMedicao).map(r => r.id);
+      filteredTrechos = filteredTrechos.filter(t => ruasIds.includes(t.ruaId));
+    }
+    if (selRua !== 'TODOS') {
+      filteredTrechos = filteredTrechos.filter(t => t.ruaId === selRua);
+    }
+    if (selProfissional !== 'TODOS') {
+      filteredTrechos = filteredTrechos.filter(t => t.profissionalId === selProfissional);
+    }
+
+    return { trechos: filteredTrechos, contratos: allContratos, medicoes: allMeds, ruas: allRuas, servicos: allServicos };
   };
 
-  const gerarPreviewProdutividade = async () => {
-    if (!selectedMedicao) return;
+  const generateZip = async () => {
     setLoading(true);
-
+    setProgress('Organizando pastas e fotos...');
     try {
-      const medicao = medicoes.find(m => m.id === selectedMedicao);
-      const contrato = contratos.find(c => c.id === selectedContrato);
-      const todasRuas = await db.getAll<Rua>('ruas');
-      const ruasDaMedicao = todasRuas.filter(r => r.medicaoId === selectedMedicao);
-      const todosTrechos = await db.getAll<Trecho>('trechos');
-      const todosServicos = await db.getAll<ServicoComplementar>('servicos');
-      
-      const prosToProcess = selectedProfissional === 'TODOS' 
-        ? profissionais 
-        : profissionais.filter(p => p.id === selectedProfissional);
-
-      const reportProfissionais = prosToProcess.map(pro => {
-        // Para cada profissional, agrupar por rua
-        const proStreets: StreetGroup[] = ruasDaMedicao.map(rua => {
-          const trechosDaRua = todosTrechos.filter(t => t.ruaId === rua.id && t.profissionalId === pro.id);
-          const servicosDaRua = todosServicos.filter(s => s.ruaId === rua.id); // Servicos por rua (atribuido ao prof da rua)
-          
-          const subtotalArea = trechosDaRua.reduce((acc, t) => acc + t.area, 0);
-          const subtotalMeioFio = servicosDaRua.reduce((acc, s) => acc + s.quantidade, 0);
-
-          return {
-            rua,
-            trechos: trechosDaRua,
-            servicos: servicosDaRua,
-            subtotalArea,
-            subtotalMeioFio
-          };
-        }).filter(sg => sg.trechos.length > 0 || sg.servicos.length > 0);
-
-        const totalArea = proStreets.reduce((acc, sg) => acc + sg.subtotalArea, 0);
-        const totalMeioFio = proStreets.reduce((acc, sg) => acc + sg.subtotalMeioFio, 0);
-
-        return {
-          profissional: pro,
-          streets: proStreets,
-          totalArea,
-          totalMeioFio
-        };
-      }).filter(rp => rp.streets.length > 0);
-
-      setReportData({
-        contrato,
-        medicao,
-        profissionais: reportProfissionais,
-        totalGeralArea: reportProfissionais.reduce((acc, p) => acc + p.totalArea, 0),
-        totalGeralMeioFio: reportProfissionais.reduce((acc, p) => acc + p.totalMeioFio, 0)
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao processar produtividade.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const exportPDF = () => {
-    if (!reportData) return;
-    const doc = new jsPDF();
-    
-    // Cabeçalho
-    doc.setFontSize(10);
-    doc.text("ESTADO DO CEARÁ", 105, 15, { align: 'center' });
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("PREFEITURA MUNICIPAL DE HORIZONTE", 105, 22, { align: 'center' });
-    doc.setFontSize(10);
-    doc.text("RELATÓRIO DETALHADO DE PRODUTIVIDADE", 105, 28, { align: 'center' });
-    doc.line(20, 32, 190, 32);
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text(`CONTRATO: ${reportData.contrato?.numero || '---'}`, 20, 42);
-    doc.text(`MEDIÇÃO: ${reportData.medicao?.numero || '---'}`, 20, 47);
-    doc.text(`PERÍODO: ${reportData.medicao?.periodo || '---'}`, 20, 52);
-
-    let y = 65;
-    
-    reportData.profissionais.forEach(rp => {
-      // Nome do Profissional
-      doc.setFont("helvetica", "bold");
-      doc.setFillColor(37, 99, 235); // Blue 600
-      doc.setTextColor(255, 255, 255);
-      doc.rect(20, y-5, 170, 8, 'F');
-      doc.text(`PROFISSIONAL: ${rp.profissional.nome.toUpperCase()}`, 22, y);
-      y += 10;
-      doc.setTextColor(0, 0, 0);
-
-      rp.streets.forEach(sg => {
-        // Nome da Rua e Tipo
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(10);
-        doc.text(`LOGRADOURO: ${sg.rua.nome.toUpperCase()} (${sg.rua.tipoIntervencao === 'NOVA' ? 'RUA NOVA' : 'RECUPERAÇÃO'})`, 22, y);
-        y += 6;
-
-        // Trechos
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        sg.trechos.forEach((t, i) => {
-          doc.text(`Trecho ${i+1}: ${t.comprimento.toFixed(2)}m x ${t.larguraMedia.toFixed(2)}m = ${t.area.toFixed(2)} m² (${t.data})`, 25, y);
-          y += 5;
-          if (y > 275) { doc.addPage(); y = 20; }
-        });
-
-        // Servicos Complementares
-        if (sg.servicos.length > 0) {
-          doc.setFont("helvetica", "italic");
-          sg.servicos.forEach(s => {
-            const tipoStr = s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada Meio-Fio' : 'Assentamento Meio-Fio';
-            doc.text(`- ${tipoStr}: ${s.quantidade.toFixed(2)} m (${s.data})`, 25, y);
-            y += 5;
-            if (y > 275) { doc.addPage(); y = 20; }
-          });
-        }
-
-        doc.setFont("helvetica", "bold");
-        doc.text(`Subtotal Rua: ${sg.subtotalArea.toFixed(2)} m²`, 190, y, { align: 'right' });
-        y += 10;
-        if (y > 275) { doc.addPage(); y = 20; }
-      });
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text(`TOTAL PROFISSIONAL: ${rp.totalArea.toFixed(2)} m²`, 190, y, { align: 'right' });
-      y += 15;
-      if (y > 270) { doc.addPage(); y = 20; }
-    });
-
-    // Rodapé de Total Geral
-    doc.line(20, y, 190, y);
-    y += 8;
-    doc.setFontSize(12);
-    doc.text(`TOTAL GERAL DA MEDIÇÃO: ${reportData.totalGeralArea.toFixed(2)} m²`, 190, y, { align: 'right' });
-
-    doc.save(`RELATORIO_PRODUCAO_HORIZONTE_MED_${reportData.medicao?.numero}.pdf`);
-  };
-
-  const downloadFotosZip = async () => {
-    if (!selectedMedicao) return;
-    setZipping(true);
-    try {
+      const { trechos, contratos: cList, medicoes: mList, ruas: rList } = await getFilteredData();
       const zip = new JSZip();
-      const medicao = medicoes.find(m => m.id === selectedMedicao);
-      const todasRuas = await db.getAll<Rua>('ruas');
-      const ruasDaMedicao = todasRuas.filter(r => r.medicaoId === selectedMedicao);
-      const todosTrechos = await db.getAll<Trecho>('trechos');
 
-      const rootFolder = zip.folder(`FOTOS_MEDICAO_${medicao?.numero}_${medicao?.periodo.replace(/\//g, '-')}`);
+      for (const t of trechos) {
+        const rua = rList.find(r => r.id === t.ruaId);
+        const med = mList.find(m => m.id === rua?.medicaoId);
+        const con = cList.find(c => c.id === med?.contratoId);
 
-      for (const rua of ruasDaMedicao) {
-        const ruaFolder = rootFolder?.folder(rua.nome.replace(/\s+/g, '_'));
+        const path = `${con?.numero || 'Sem_Contrato'}/Med_${med?.numero || 'Sem_Medicao'}/${rua?.nome || 'Rua_N_I'}/Trecho_${t.id.substring(0, 5)}`;
         
-        if (rua.fotos && rua.fotos.length > 0) {
-          const antesFolder = ruaFolder?.folder("ESTADO_INICIAL");
-          rua.fotos.forEach((f, i) => {
-            antesFolder?.file(`FOTO_ANTES_${i+1}.jpg`, f.base64.split(',')[1], { base64: true });
-          });
-        }
+        const trechoFolder = zip.folder(path);
+        const antesFolder = trechoFolder?.folder("Antes");
+        const depoisFolder = trechoFolder?.folder("Depois");
 
-        const trechosRua = todosTrechos.filter(t => t.ruaId === rua.id);
-        if (trechosRua.length > 0) {
-          const execFolder = ruaFolder?.folder("EXECUCAO");
-          trechosRua.forEach((t, ti) => {
-            t.fotos.forEach((f, fi) => {
-              execFolder?.file(`TRECHO_${ti+1}_${f.tipo}_${fi+1}.jpg`, f.base64.split(',')[1], { base64: true });
-            });
-          });
+        t.fotos.forEach((f, i) => {
+          const folder = f.tipo === 'Antes' ? antesFolder : depoisFolder;
+          const data = f.base64.split(',')[1];
+          folder?.file(`foto_${i+1}.jpg`, data, { base64: true });
+        });
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `RELATORIO_FOTOS_PAVINSPECT_${new Date().getTime()}.zip`;
+      link.click();
+    } catch (e) { alert("Erro ao gerar ZIP"); }
+    setLoading(false);
+  };
+
+  const generatePDF = async (includePhotos: boolean) => {
+    setLoading(true);
+    setProgress(includePhotos ? 'Gerando PDF com fotos...' : 'Gerando produtividade técnica...');
+    try {
+      const { trechos, contratos: cList, medicoes: mList, ruas: rList } = await getFilteredData();
+      const doc = new jsPDF();
+      let y = 20;
+
+      const header = () => {
+        doc.setFontSize(10); doc.setTextColor(100);
+        doc.text("PREFEITURA MUNICIPAL DE HORIZONTE - CE", 105, 15, { align: 'center' });
+        doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.setTextColor(0);
+        doc.text("RELATÓRIO TÉCNICO DE FISCALIZAÇÃO", 105, 23, { align: 'center' });
+        doc.setDrawColor(200); doc.setLineWidth(0.2); doc.line(20, 28, 190, 28);
+        y = 38;
+      };
+
+      header();
+
+      const groupedData: any = {};
+      trechos.forEach(t => {
+        const rua = rList.find(r => r.id === t.ruaId);
+        const med = mList.find(m => m.id === rua?.medicaoId);
+        const con = cList.find(c => c.id === med?.contratoId);
+        const pro = profissionais.find(p => p.id === t.profissionalId);
+
+        const conKey = con?.id || 'none';
+        const medKey = med?.id || 'none';
+        const ruaKey = rua?.id || 'none';
+        const proKey = pro?.id || 'none';
+
+        if (!groupedData[conKey]) groupedData[conKey] = { obj: con, meds: {}, total: 0 };
+        if (!groupedData[conKey].meds[medKey]) groupedData[conKey].meds[medKey] = { obj: med, ruas: {}, total: 0 };
+        if (!groupedData[conKey].meds[medKey].ruas[ruaKey]) groupedData[conKey].meds[medKey].ruas[ruaKey] = { obj: rua, pros: {}, total: 0 };
+        if (!groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey]) groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey] = { obj: pro, trechos: [], total: 0 };
+        
+        groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].trechos.push(t);
+        groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].total += t.area;
+        groupedData[conKey].meds[medKey].ruas[ruaKey].total += t.area;
+        groupedData[conKey].meds[medKey].total += t.area;
+        groupedData[conKey].total += t.area;
+      });
+
+      for (const cId in groupedData) {
+        const con = groupedData[cId];
+        // Linha do Contrato
+        doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.8); doc.line(20, y-6, 190, y-6);
+        doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.setTextColor(37, 99, 235);
+        doc.text(`CONTRATO: ${con.obj?.numero || 'N/A'}`, 20, y);
+        doc.text(`TOTAL: ${con.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+        y += 12;
+
+        for (const mId in con.meds) {
+          const med = con.meds[mId];
+          // Linha da Medição
+          doc.setDrawColor(180); doc.setLineWidth(0.4); doc.line(25, y-6, 190, y-6);
+          doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(80);
+          doc.text(`MEDIÇÃO: ${med.obj?.numero || 'N/A'} (${med.obj?.periodo || 'N/A'})`, 25, y);
+          doc.text(`Subtotal Med.: ${med.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+          y += 10;
+
+          for (const rId in med.ruas) {
+            const rua = med.ruas[rId];
+            const tipoDesc = rua.obj?.tipoIntervencao === 'NOVA' ? '[PAVIMENTAÇÃO NOVA]' : '[RECUPERAÇÃO]';
+            
+            // Linha da Rua
+            doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(30, y-5, 190, y-5);
+            doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0);
+            doc.text(`LOGRADOURO: ${rua.obj?.nome || 'N/A'} ${tipoDesc}`, 30, y);
+            y += 8;
+
+            for (const pId in rua.pros) {
+              const pro = rua.pros[pId];
+              doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(60, 60, 60);
+              doc.text(`FISCAL: ${pro.obj?.nome || 'NÃO INFORMADO'}`, 35, y);
+              y += 5;
+
+              // Tabela de Trechos
+              for (const t of pro.trechos) {
+                if (y > 270) { doc.addPage(); header(); }
+                doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100);
+                doc.text(`   - Trecho ${t.comprimento}m x ${t.larguraMedia}m = ${t.area.toFixed(2)} m² (Data: ${t.data})`, 38, y);
+                y += 5;
+
+                if (includePhotos && t.fotos && t.fotos.length > 0) {
+                  y += 2;
+                  let xImg = 45;
+                  for (const f of t.fotos.slice(0, 4)) {
+                    try {
+                      doc.addImage(f.base64, 'JPEG', xImg, y, 32, 32);
+                      doc.setFontSize(6); doc.text(f.tipo, xImg, y + 35);
+                      xImg += 36;
+                    } catch(e) {}
+                  }
+                  y += 42;
+                  if (y > 270) { doc.addPage(); header(); }
+                }
+              }
+              // Subtotal do Profissional
+              doc.setFontSize(8); doc.setFont("helvetica", "bolditalic"); doc.setTextColor(120);
+              doc.text(`Subtotal do Profissional no Logradouro: ${pro.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+              y += 8;
+              if (y > 270) { doc.addPage(); header(); }
+            }
+            // Total do Logradouro
+            doc.setDrawColor(240); doc.line(30, y-4, 190, y-4);
+            doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(0);
+            doc.text(`TOTAL LOGRADOURO: ${rua.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+            y += 12;
+            if (y > 270) { doc.addPage(); header(); }
+          }
         }
       }
 
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `MIDIA_PAVINSPECT_MED_${medicao?.numero}.zip`;
-      link.click();
-    } catch (err) {
-      alert("Erro ao gerar ZIP de fotos.");
-    } finally {
-      setZipping(false);
-    }
+      doc.save(`RELATORIO_TECNICO_${new Date().getTime()}.pdf`);
+    } catch (e) { console.error(e); alert("Erro ao gerar PDF"); }
+    setLoading(false);
   };
 
-  if (reportData) {
-    return (
-      <div className="space-y-6 pb-24 animate-in fade-in slide-in-from-right-4 duration-300">
-        <div className="flex items-center justify-between">
-           <button 
-            onClick={() => setReportData(null)}
-            className="p-3 bg-white rounded-2xl shadow-sm text-slate-500 active:scale-95"
-           >
-              <ArrowLeft size={24} />
-           </button>
-           <h2 className="font-black text-slate-800 uppercase tracking-tighter text-xl">Detalhamento de Produção</h2>
-           <div className="w-10"></div>
-        </div>
-
-        <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-xl relative overflow-hidden">
-           <div className="relative z-10 flex justify-between items-end">
-              <div>
-                <p className="text-[10px] font-bold uppercase opacity-50 tracking-widest mb-1">Total Geral Medido</p>
-                <h3 className="text-4xl font-black tracking-tighter">{reportData.totalGeralArea.toFixed(2)} m²</h3>
-              </div>
-              <TrendingUp size={48} className="opacity-20" />
-           </div>
-           <div className="absolute top-[-30px] right-[-30px] opacity-10">
-              <Layers size={140} />
-           </div>
-        </div>
-
-        <div className="space-y-6">
-          {reportData.profissionais.map((rp, idx) => (
-            <div key={idx} className="space-y-4">
-              <div className="flex items-center gap-3 px-2">
-                 <div className="p-2 bg-blue-600 text-white rounded-xl shadow-lg">
-                    <HardHat size={18} />
-                 </div>
-                 <div>
-                    <h4 className="font-black text-slate-800 text-sm uppercase leading-none">{rp.profissional.nome}</h4>
-                    <p className="text-[9px] text-blue-500 font-bold uppercase tracking-widest">Total: {rp.totalArea.toFixed(2)} m²</p>
-                 </div>
-              </div>
-
-              {rp.streets.map((sg, sIdx) => (
-                <div key={sIdx} className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
-                  <div className="p-5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${sg.rua.tipoIntervencao === 'NOVA' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'}`}>
-                         {sg.rua.tipoIntervencao === 'NOVA' ? <PlusCircle size={18} /> : <RotateCcw size={18} />}
-                      </div>
-                      <div>
-                         <h5 className="font-black text-slate-800 text-xs uppercase">{sg.rua.nome}</h5>
-                         <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-                           {sg.rua.tipoIntervencao === 'NOVA' ? 'Pavimentação Nova' : 'Recuperação'}
-                         </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                       <p className="text-xs font-black text-slate-700">{sg.subtotalArea.toFixed(2)} m²</p>
-                    </div>
-                  </div>
-                  
-                  <div className="p-5 space-y-4">
-                     {/* Detalhes dos Trechos */}
-                     <div className="space-y-2">
-                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Trechos Medidos</p>
-                        {sg.trechos.map((t, ti) => (
-                          <div key={ti} className="flex justify-between items-center text-[10px] bg-slate-50/50 p-2 rounded-lg">
-                             <div className="flex items-center gap-2 font-bold text-slate-600">
-                                <Ruler size={12} className="text-slate-300" />
-                                <span>{t.comprimento.toFixed(2)}m x {t.larguraMedia.toFixed(2)}m</span>
-                             </div>
-                             <span className="font-black text-blue-600">{t.area.toFixed(2)} m²</span>
-                          </div>
-                        ))}
-                     </div>
-
-                     {/* Outros Serviços */}
-                     {sg.servicos.length > 0 && (
-                        <div className="space-y-2 pt-2 border-t border-slate-50">
-                           <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Serviços Complementares</p>
-                           {sg.servicos.map((s, si) => (
-                              <div key={si} className="flex justify-between items-center text-[10px] bg-amber-50/50 p-2 rounded-lg">
-                                 <div className="flex items-center gap-2 font-bold text-amber-700">
-                                    <Wrench size={12} className="opacity-50" />
-                                    <span>{s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada' : 'Assentamento'} Meio-fio</span>
-                                 </div>
-                                 <span className="font-black text-amber-600">{s.quantidade.toFixed(2)} m</span>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 pt-4">
-          <button 
-            onClick={exportPDF}
-            className="w-full py-6 bg-blue-600 text-white font-black rounded-[28px] shadow-xl shadow-blue-100 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] active:scale-95 transition-all"
-          >
-            <Download size={20} /> Baixar Relatório (PDF)
-          </button>
-          <button 
-            onClick={() => setReportData(null)}
-            className="w-full py-6 bg-white text-slate-500 font-black rounded-[28px] border border-slate-200 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] active:bg-slate-50"
-          >
-            Refazer Filtros
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6 pb-24">
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden">
+    <div className="space-y-6 pb-24 animate-in fade-in duration-500">
+      <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10">
-          <h2 className="text-3xl font-black tracking-tighter uppercase leading-none mb-2">Relatórios</h2>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 italic">Daniel Wyllame - Fiscalização Técnica</p>
+          <h2 className="text-3xl font-black tracking-tighter uppercase leading-none mb-2">Central de Relatórios</h2>
+          <p className="text-blue-400 text-[10px] font-bold uppercase tracking-[0.2em]">Horizonte • Fiscalização Técnica</p>
         </div>
-        <Layers size={120} className="absolute -right-5 -bottom-5 opacity-10 rotate-12" />
+        <Printer size={120} className="absolute -right-5 -bottom-5 opacity-10 rotate-12" />
       </div>
 
-      <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-200 space-y-6">
-        <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-2xl text-blue-600">
-                <FileSearch size={24} />
-            </div>
-            <div>
-                <h4 className="font-black text-slate-800 text-xs uppercase tracking-widest">Filtros de Produtividade</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">Configure para exportar os dados</p>
-            </div>
+      <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="p-2 bg-blue-600 text-white rounded-xl"><Filter size={16} /></div>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtros de Pesquisa</h3>
         </div>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contrato</label>
-            <select 
-              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              value={selectedContrato}
-              onChange={(e) => handleContratoChange(e.target.value)}
-            >
-              <option value="">Selecione o Contrato...</option>
-              {contratos.map(c => <option key={c.id} value={c.id}>Contrato {c.numero}</option>)}
-            </select>
+        <div className="grid grid-cols-1 gap-3">
+          <select 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase"
+            value={selContrato}
+            onChange={(e) => { setSelContrato(e.target.value); setSelMedicao('TODOS'); setSelRua('TODOS'); }}
+          >
+            <option value="TODOS">Todos os Contratos</option>
+            {contratos.map(c => <option key={c.id} value={c.id}>Contrato {c.numero}</option>)}
+          </select>
+
+          <select 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase"
+            value={selMedicao}
+            onChange={(e) => { setSelMedicao(e.target.value); setSelRua('TODOS'); }}
+          >
+            <option value="TODOS">Todas as Medições</option>
+            {filteredMedicoes.map(m => <option key={m.id} value={m.id}>Medição {m.numero} ({m.periodo})</option>)}
+          </select>
+
+          <select 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase"
+            value={selRua}
+            onChange={(e) => setSelRua(e.target.value)}
+          >
+            <option value="TODOS">Todas as Ruas</option>
+            {filteredRuas.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+          </select>
+
+          <select 
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase"
+            value={selProfissional}
+            onChange={(e) => setSelProfissional(e.target.value)}
+          >
+            <option value="TODOS">Todos os Fiscais</option>
+            {profissionais.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Escolha o Tipo de Arquivo</h3>
+        
+        <ReportCard 
+          icon={<FileArchive size={28} />}
+          title="Acervo Fotográfico (ZIP)"
+          desc="Organiza fotos em subpastas hierárquicas."
+          color="bg-amber-500"
+          onClick={generateZip}
+          disabled={loading}
+        />
+
+        <ReportCard 
+          icon={<FileText size={28} />}
+          title="Produtividade (PDF)"
+          desc="Técnico: Agrupamento por fiscal, subtotais e identificação da intervenção."
+          color="bg-blue-600"
+          onClick={() => generatePDF(false)}
+          disabled={loading}
+        />
+
+        <ReportCard 
+          icon={<ImageIcon size={28} />}
+          title="Relatório Completo (PDF + Fotos)"
+          desc="Dossiê: Produtividade com fotos de antes e depois por trecho."
+          color="bg-emerald-500"
+          onClick={() => generatePDF(true)}
+          disabled={loading}
+        />
+      </div>
+
+      {loading && (
+        <div className="fixed inset-0 z-[3000] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center">
+          <div className="bg-blue-600 p-6 rounded-[40px] shadow-2xl shadow-blue-200 mb-6">
+            <Loader2 className="animate-spin text-white" size={48} />
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Medição</label>
-                <select 
-                    disabled={!selectedContrato}
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-30"
-                    value={selectedMedicao}
-                    onChange={(e) => setSelectedMedicao(e.target.value)}
-                >
-                    <option value="">Selecione...</option>
-                    {medicoes.map(m => <option key={m.id} value={m.id}>Med. {m.numero}</option>)}
-                </select>
-            </div>
-            <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Equipe/Profissional</label>
-                <select 
-                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                    value={selectedProfissional}
-                    onChange={(e) => setSelectedProfissional(e.target.value)}
-                >
-                    <option value="TODOS">Toda a Equipe</option>
-                    {profissionais.map(p => <option key={p.id} value={p.id}>{p.apelido || p.nome}</option>)}
-                </select>
-            </div>
-          </div>
+          <h4 className="text-xl font-black text-slate-800 uppercase mb-2">Processando Dados</h4>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+            {progress || 'Aguarde enquanto preparamos seu arquivo técnico...'}
+          </p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        <button 
-          onClick={gerarPreviewProdutividade}
-          disabled={!selectedMedicao || loading}
-          className="w-full py-6 bg-blue-600 text-white font-black rounded-[28px] shadow-xl shadow-blue-100 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] active:scale-95 transition-all disabled:opacity-30"
-        >
-          {loading ? <Loader2 className="animate-spin" size={20} /> : <TrendingUp size={20} />}
-          {loading ? 'Calculando Detalhes...' : 'Visualizar Detalhamento Técnico'}
-        </button>
-
-        <button 
-          onClick={downloadFotosZip}
-          disabled={!selectedMedicao || zipping}
-          className="w-full py-6 bg-emerald-600 text-white font-black rounded-[28px] shadow-xl shadow-emerald-100 flex items-center justify-center gap-3 uppercase text-xs tracking-[0.2em] active:scale-95 transition-all disabled:opacity-30"
-        >
-          {zipping ? <Loader2 className="animate-spin" size={20} /> : <FileArchive size={20} />}
-          {zipping ? 'Compactando Fotos...' : 'Baixar Fotos da Medição (ZIP)'}
-        </button>
-      </div>
-
-      <div className="bg-amber-50 border border-amber-100 p-6 rounded-[32px] flex gap-4">
-         <div className="bg-white p-3 rounded-2xl shadow-sm text-amber-500 h-fit">
-            <ClipboardCheck size={24} />
-         </div>
-         <div>
-            <h5 className="font-black text-amber-900 text-xs uppercase mb-1">Fiscalização Horizonte</h5>
-            <p className="text-[10px] text-amber-700 font-bold uppercase leading-relaxed opacity-80">
-                O relatório detalhado inclui a distinção entre rua nova e recuperação, além de listar cada trecho individual com suas dimensões medidas.
-            </p>
-         </div>
-      </div>
+      )}
     </div>
   );
 };
+
+const ReportCard = ({ icon, title, desc, color, onClick, disabled }: { icon: any, title: string, desc: string, color: string, onClick: () => void, disabled: boolean }) => (
+  <button 
+    onClick={onClick}
+    disabled={disabled}
+    className="w-full bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center gap-5 active:scale-[0.98] transition-all text-left group disabled:opacity-50"
+  >
+    <div className={`${color} text-white p-5 rounded-3xl shadow-lg shadow-slate-100 group-hover:scale-110 transition-transform`}>
+      {icon}
+    </div>
+    <div className="flex-1">
+      <h4 className="font-black text-slate-800 text-sm uppercase leading-none mb-1">{title}</h4>
+      <p className="text-[9px] font-bold text-slate-400 uppercase leading-relaxed">{desc}</p>
+    </div>
+    <ChevronRight size={20} className="text-slate-300" />
+  </button>
+);
 
 export default RelatoriosView;

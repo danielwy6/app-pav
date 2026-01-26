@@ -3,7 +3,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db';
 import { Rua, FotoEvidencia, TipoIntervencao } from '../types';
 import L from 'leaflet';
-import { Save, Loader2, Map as MapIcon, Satellite, Navigation, Info, MapPin, Search, Camera, X, PlusCircle, RotateCcw } from 'lucide-react';
+import { 
+  Save, 
+  Loader2, 
+  Map as MapIcon, 
+  Satellite, 
+  Navigation, 
+  Search, 
+  Camera, 
+  X, 
+  PlusCircle, 
+  RotateCcw,
+  MapPin
+} from 'lucide-react';
 
 interface FormRuaProps {
   medicaoId: string;
@@ -33,6 +45,34 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
     tipoIntervencao: 'RECUPERACAO'
   });
 
+  // Função para obter localização e endereço via Geocoding Reverso
+  const fetchCurrentLocation = () => {
+    setGeocoding(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        
+        setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
+        
+        if (mapInstance.current) {
+          mapInstance.current.setView([lat, lng], 18);
+          markerInstance.current?.setLatLng([lat, lng]);
+        } else {
+          initMap(lat, lng);
+        }
+        
+        reverseGeocode(lat, lng);
+      },
+      (err) => {
+        console.error("Erro GPS:", err);
+        setGeocoding(false);
+        if (!mapInstance.current) initMap(-4.1017, -38.4897);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   useEffect(() => {
     const loadInitial = async () => {
       if (id) {
@@ -43,17 +83,8 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
           initMap(r.latitude || -4.1017, r.longitude || -38.4897);
         }
       } else {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
-            initMap(lat, lng);
-            reverseGeocode(lat, lng);
-          },
-          () => initMap(-4.1017, -38.4897),
-          { enableHighAccuracy: true }
-        );
+        // Se for uma nova rua, busca localização automaticamente ao montar
+        fetchCurrentLocation();
       }
     };
 
@@ -68,7 +99,10 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
   }, [id]);
 
   const reverseGeocode = async (lat: number, lng: number) => {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) {
+        setGeocoding(false);
+        return;
+    }
     
     setGeocoding(true);
     try {
@@ -79,19 +113,20 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
       
       if (data && data.address) {
         const addr = data.address;
-        const streetName = addr.road || addr.pedestrian || addr.suburb || '';
+        const streetName = addr.road || addr.pedestrian || addr.suburb || addr.path || '';
         const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || '';
 
         setFormData(prev => ({
           ...prev,
-          nome: streetName.toUpperCase(),
-          bairro: neighborhood.toUpperCase(),
+          // Preenche automaticamente, mas o usuário pode apagar/alterar
+          nome: prev.nome ? prev.nome : streetName.toUpperCase(),
+          bairro: prev.bairro ? prev.bairro : neighborhood.toUpperCase(),
           latitude: lat,
           longitude: lng
         }));
       }
     } catch (err) {
-      console.warn("Erro ao buscar endereço automático", err);
+      console.warn("Erro no Geocoding:", err);
     } finally {
       setGeocoding(false);
     }
@@ -100,7 +135,7 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
   const handleAddPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(file => {
+    Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const novaFoto: FotoEvidencia = {
@@ -122,7 +157,7 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
     mapInstance.current = L.map(mapContainerRef.current, {
       zoomControl: false,
       attributionControl: false
-    }).setView([lat, lng], 17);
+    }).setView([lat, lng], 18);
 
     updateTileLayer();
 
@@ -143,18 +178,10 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
       setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
       reverseGeocode(lat, lng);
     });
-
-    mapInstance.current.on('click', (e) => {
-      const { lat, lng } = e.latlng;
-      markerInstance.current?.setLatLng([lat, lng]);
-      setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
-      reverseGeocode(lat, lng);
-    });
   };
 
   const updateTileLayer = () => {
     if (!mapInstance.current) return;
-    
     mapInstance.current.eachLayer((layer) => {
       if (layer instanceof L.TileLayer) mapInstance.current?.removeLayer(layer);
     });
@@ -166,19 +193,18 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
     }
   };
 
-  useEffect(() => {
-    updateTileLayer();
-  }, [mapType]);
+  useEffect(() => { updateTileLayer(); }, [mapType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.nome?.trim()) return alert("O nome da rua é obrigatório.");
     setLoading(true);
     try {
       const data: Rua = {
         id: id || crypto.randomUUID(),
-        nome: formData.nome || '',
-        bairro: formData.bairro || '',
-        municipio: formData.municipio || 'HORIZONTE',
+        nome: formData.nome!.toUpperCase(),
+        bairro: (formData.bairro || '').toUpperCase(),
+        municipio: (formData.municipio || 'HORIZONTE').toUpperCase(),
         medicaoId: formData.medicaoId!,
         latitude: formData.latitude,
         longitude: formData.longitude,
@@ -195,21 +221,29 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-20 animate-in fade-in duration-300">
       <div className="bg-white rounded-[32px] shadow-sm border border-slate-200 overflow-hidden relative">
-        <div ref={mapContainerRef} className="h-72 w-full bg-slate-100 z-0"></div>
+        <div ref={mapContainerRef} className="h-64 w-full bg-slate-100 z-0"></div>
         
-        <button 
-          type="button"
-          onClick={() => setMapType(mapType === 'street' ? 'satellite' : 'street')}
-          className="absolute top-4 right-4 z-[1000] bg-white/90 p-3 rounded-2xl shadow-lg border border-slate-200 text-slate-600 active:scale-90 transition-transform"
-        >
-          {mapType === 'street' ? <Satellite size={20} /> : <MapIcon size={20} />}
-        </button>
+        <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+            <button 
+                type="button"
+                onClick={() => setMapType(mapType === 'street' ? 'satellite' : 'street')}
+                className="bg-white/90 p-3 rounded-2xl shadow-lg border border-slate-200 text-slate-600 active:scale-90 transition-transform"
+            >
+                {mapType === 'street' ? <Satellite size={20} /> : <MapIcon size={20} />}
+            </button>
+            <button 
+                type="button"
+                onClick={fetchCurrentLocation}
+                className="bg-blue-600 p-3 rounded-2xl shadow-lg text-white active:scale-90 transition-transform"
+            >
+                {geocoding ? <Loader2 className="animate-spin" size={20} /> : <Navigation size={20} />}
+            </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-8">
           
-          {/* SELETOR DE TIPO DE INTERVENÇÃO */}
           <div className="space-y-3">
              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Tipo de Intervenção</label>
              <div className="grid grid-cols-2 gap-3">
@@ -235,15 +269,15 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
           <div className="relative">
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex justify-between tracking-widest">
               Nome do Logradouro
-              {geocoding && <span className="text-blue-500 animate-pulse lowercase font-normal italic">buscando...</span>}
+              {geocoding && <span className="text-blue-500 animate-pulse lowercase font-normal italic">buscando localização...</span>}
             </label>
             <div className="relative">
               <input 
                 required 
-                className={`w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black uppercase text-lg transition-colors ${geocoding ? 'text-slate-300' : 'text-slate-800'}`} 
+                className={`w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-black uppercase text-lg transition-colors ${geocoding && !formData.nome ? 'text-slate-300' : 'text-slate-800'}`} 
                 value={formData.nome} 
                 onChange={e => setFormData(prev => ({ ...prev, nome: e.target.value }))} 
-                placeholder="EX: RUA SÃO JOÃO" 
+                placeholder={geocoding ? "OBTENDO NOME..." : "EX: RUA SÃO JOÃO"} 
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300">
                 <Search size={22} />
@@ -264,7 +298,7 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
 
           <div className="border-t border-slate-100 pt-6 space-y-4">
              <div className="flex justify-between items-center">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Fotos 'ANTES' do Logradouro Completo</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Fotos 'ANTES' do Logradouro</label>
                 <span className="text-blue-600 font-black text-xs">{fotosAntesRua.length} Anexadas</span>
              </div>
              
@@ -273,7 +307,7 @@ const FormRua: React.FC<FormRuaProps> = ({ medicaoId, id, onSave, onCancel }) =>
                 onClick={() => fileInputRef.current?.click()} 
                 className="w-full py-5 bg-blue-50 text-blue-700 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 border-2 border-dashed border-blue-200 active:scale-95 transition-all"
              >
-                <Camera size={20} /> Capturar estado inicial da rua
+                <Camera size={20} /> Capturar estado inicial
              </button>
              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" capture="environment" multiple onChange={handleAddPhoto} />
 

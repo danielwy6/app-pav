@@ -73,14 +73,11 @@ class Database {
     });
   }
 
-  // EXCLUSÕES EM CASCATA - GARANTEM LIMPEZA TOTAL
   async deleteRuaCascade(ruaId: string): Promise<void> {
     const trechos = await this.getAll<Trecho>('trechos');
     for (const t of trechos.filter(x => x.ruaId === ruaId)) await this.delete('trechos', t.id);
-    
     const servicos = await this.getAll<ServicoComplementar>('servicos');
     for (const s of servicos.filter(x => x.ruaId === ruaId)) await this.delete('servicos', s.id);
-    
     await this.delete('ruas', ruaId);
   }
 
@@ -96,34 +93,18 @@ class Database {
     await this.delete('contratos', contratoId);
   }
 
-  // Fix: Adicionando o método getDirty solicitado nos componentes Dashboard e SyncView
   async getDirty<T>(storeName: string): Promise<T[]> {
     const items = await this.getAll<any>(storeName);
     return items.filter(i => i.isDirty) as T[];
   }
 
-  // Fix: Atualizando getDirtyCounts para usar o novo getDirty
-  async getDirtyCounts(): Promise<number> {
-    let total = 0;
-    const stores = ['contratos', 'medicoes', 'ruas', 'trechos', 'profissionais', 'servicos'];
-    for (const s of stores) {
-      const dirtyItems = await this.getDirty<any>(s);
-      total += dirtyItems.length;
-    }
-    return total;
-  }
-
-  // Fix: Adicionando o método exportAllData solicitado no componente SyncView
   async exportAllData(): Promise<string> {
     const stores = ['contratos', 'medicoes', 'ruas', 'trechos', 'profissionais', 'servicos'];
     const exportData: any = {};
-    for (const s of stores) {
-      exportData[s] = await this.getAll(s);
-    }
+    for (const s of stores) exportData[s] = await this.getAll(s);
     return JSON.stringify(exportData);
   }
 
-  // Fix: Adicionando o método importAllData solicitado no componente SyncView
   async importAllData(json: string): Promise<void> {
     const data = JSON.parse(json);
     const stores = ['contratos', 'medicoes', 'ruas', 'trechos', 'profissionais', 'servicos'];
@@ -132,7 +113,8 @@ class Database {
         const store = await this.getStore(s, 'readwrite');
         for (const item of data[s]) {
           await new Promise<void>((resolve, reject) => {
-            const request = store.put(item);
+            // Ao importar, mantemos o ID mas marcamos como dirty para garantir que o novo aparelho tente sincronizar se necessário
+            const request = store.put({ ...item, isDirty: item.isDirty ?? true });
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
           });
