@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db';
-import { Trecho, Profissional, Rua, FotoEvidencia } from '../types';
+import { Trecho, Profissional, Rua, FotoEvidencia, ServicoComplementar, TipoServico } from '../types';
 import L from 'leaflet';
 import { 
   Camera, 
@@ -14,7 +14,10 @@ import {
   Ruler, 
   UserPlus, 
   Check,
-  Trash2
+  Trash2,
+  Wrench,
+  PlusCircle,
+  RotateCcw
 } from 'lucide-react';
 
 interface FormTrechoProps {
@@ -37,6 +40,9 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
   const [fotosAntes, setFotosAntes] = useState<FotoEvidencia[]>([]);
   const [fotosDepois, setFotosDepois] = useState<FotoEvidencia[]>([]);
   
+  // Serviços Adicionais
+  const [servicosAdicionais, setServicosAdicionais] = useState<{tipo: TipoServico, quantidade: number}[]>([]);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markerInstance = useRef<L.Marker | null>(null);
@@ -69,6 +75,12 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         setFormData(existing);
         setFotosAntes(existing.fotos?.filter(f => f.tipo === 'Antes') || []);
         setFotosDepois(existing.fotos?.filter(f => f.tipo === 'Depois') || []);
+        
+        // Carregar serviços vinculados a este trecho
+        const allServicos = await db.getAll<ServicoComplementar>('servicos');
+        const trechoServicos = allServicos.filter(s => s.trechoId === id);
+        setServicosAdicionais(trechoServicos.map(s => ({ tipo: s.tipo, quantidade: s.quantidade })));
+        
         initMap(existing.latitude, existing.longitude);
       }
     } else {
@@ -150,13 +162,28 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
     });
   };
 
+  const addServico = (tipo: TipoServico) => {
+    setServicosAdicionais(prev => [...prev, { tipo, quantidade: 0 }]);
+  };
+
+  const updateServicoQtd = (index: number, qtd: number) => {
+    const newServs = [...servicosAdicionais];
+    newServs[index].quantidade = qtd;
+    setServicosAdicionais(newServs);
+  };
+
+  const removeServico = (index: number) => {
+    setServicosAdicionais(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.profissionalId) return alert("Selecione o profissional.");
     setLoading(true);
     try {
+      const trechoId = id || crypto.randomUUID();
       const trecho: Trecho = {
-        id: id || crypto.randomUUID(),
+        id: trechoId,
         ruaId: formData.ruaId!,
         latitude: formData.latitude!,
         longitude: formData.longitude!,
@@ -171,6 +198,31 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         isDirty: true
       };
       await db.save('trechos', trecho);
+
+      // Salvar serviços complementares vinculados
+      // Primeiro, se for edição, removemos os serviços antigos deste trecho
+      if (id) {
+        const allServs = await db.getAll<ServicoComplementar>('servicos');
+        const toDelete = allServs.filter(s => s.trechoId === id);
+        for (const s of toDelete) await db.delete('servicos', s.id);
+      }
+
+      for (const s of servicosAdicionais) {
+        if (s.quantidade > 0) {
+          const servico: ServicoComplementar = {
+            id: crypto.randomUUID(),
+            ruaId: formData.ruaId!,
+            trechoId: trechoId,
+            tipo: s.tipo,
+            quantidade: s.quantidade,
+            data: trecho.data,
+            hora: trecho.hora,
+            isDirty: true
+          };
+          await db.save('servicos', servico);
+        }
+      }
+
       onSave();
     } catch (err) { alert("Erro ao salvar."); } finally { setLoading(false); }
   };
@@ -204,6 +256,52 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Larg. (m)</label>
             <input type="number" step="0.01" className="w-full p-4 bg-slate-50 border rounded-xl font-black text-xl outline-none" value={formData.larguraMedia || ''} onChange={e => setFormData(prev => ({ ...prev, larguraMedia: Number(e.target.value) }))} />
           </div>
+        </div>
+
+        {/* SEÇÃO SERVIÇOS ADICIONAIS */}
+        <div className="bg-white p-6 rounded-[32px] border border-slate-200 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Wrench size={16} className="text-blue-600" /> Serviços Adicionais (Meio-fio)
+                </h3>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => addServico('RETIRADA_MEIO_FIO')} className="p-3 bg-amber-50 text-amber-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-amber-100">
+                    <RotateCcw size={14} /> Retirada
+                </button>
+                <button type="button" onClick={() => addServico('ASSENTAMENTO_MEIO_FIO')} className="p-3 bg-blue-50 text-blue-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-blue-100">
+                    <PlusCircle size={14} /> Assentamento
+                </button>
+            </div>
+
+            {servicosAdicionais.length > 0 && (
+                <div className="space-y-3 pt-2">
+                    {servicosAdicionais.map((s, idx) => (
+                        <div key={idx} className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                            <div className={`p-2 rounded-lg ${s.tipo === 'RETIRADA_MEIO_FIO' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                                {s.tipo === 'RETIRADA_MEIO_FIO' ? <RotateCcw size={16} /> : <PlusCircle size={16} />}
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">
+                                    {s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada (m)' : 'Assentamento (m)'}
+                                </p>
+                                <input 
+                                    type="number" 
+                                    step="0.01" 
+                                    className="w-full bg-transparent font-black text-slate-800 outline-none"
+                                    placeholder="0.00"
+                                    value={s.quantidade || ''}
+                                    onChange={(e) => updateServicoQtd(idx, Number(e.target.value))}
+                                />
+                            </div>
+                            <button type="button" onClick={() => removeServico(idx)} className="p-2 text-slate-300 hover:text-red-500">
+                                <X size={18} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

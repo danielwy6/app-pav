@@ -32,6 +32,12 @@ const MedicoesList: React.FC<{ contratoId: string, onNavigate: any }> = ({ contr
     }
   };
 
+  const onEdit = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onNavigate('FORM_MEDICAO', { selectedContratoId: contratoId, editingId: id });
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl flex justify-between items-center">
@@ -56,7 +62,20 @@ const MedicoesList: React.FC<{ contratoId: string, onNavigate: any }> = ({ contr
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{m.periodo}</p>
               </div>
             </div>
-            <button onClick={(e) => onDelete(e, m.id)} className="p-4 text-red-400 hover:text-red-600 active:scale-90"><Lucide.Trash2 size={22} /></button>
+            <div className="flex gap-2">
+              <button 
+                onClick={(e) => onEdit(e, m.id)} 
+                className="p-4 text-slate-400 hover:text-blue-600 active:scale-90 transition-all"
+              >
+                <Lucide.Edit3 size={22} />
+              </button>
+              <button 
+                onClick={(e) => onDelete(e, m.id)} 
+                className="p-4 text-red-400 hover:text-red-600 active:scale-90 transition-all"
+              >
+                <Lucide.Trash2 size={22} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

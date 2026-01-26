@@ -42,6 +42,12 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
     }
   };
 
+  const onEdit = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onNavigate('FORM_TRECHO', { selectedRuaId: ruaId, editingId: id });
+  };
+
   const downloadPhotosZip = async (trecho: Trecho) => {
     if (!trecho.fotos || trecho.fotos.length === 0) {
       alert("Nenhuma foto disponível para baixar.");
@@ -51,10 +57,8 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
     setExportingZip(true);
     try {
       const zip = new JSZip();
-      // Pasta principal do trecho
       const mainFolder = zip.folder(`trecho_${trecho.id.substring(0, 8)}_${trecho.data.replace(/\//g, '-')}`);
       
-      // Cria subpastas conforme solicitado
       const antesFolder = mainFolder?.folder("Antes");
       const depoisFolder = mainFolder?.folder("Depois");
 
@@ -67,7 +71,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
         } else if (foto.tipo === 'Depois') {
           depoisFolder?.file(filename, base64Data, { base64: true });
         } else {
-          // Caso exista outro tipo de foto (DURANTE, GERAL), fica na raiz do trecho
           mainFolder?.file(`${foto.tipo}_${filename}`, base64Data, { base64: true });
         }
       });
@@ -137,12 +140,19 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
                 <p className="text-[9px] font-black text-blue-500 uppercase mt-1">{profissionais[t.profissionalId] || '---'}</p>
               </div>
             </div>
-            <button onClick={(e) => onDelete(e, t.id)} className="p-4 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-all"><Lucide.Trash2 size={22} /></button>
+            <div className="flex gap-2">
+              <button 
+                onClick={(e) => onEdit(e, t.id)} 
+                className="p-4 bg-slate-50 text-slate-400 rounded-2xl active:scale-90 transition-all"
+              >
+                <Lucide.Edit3 size={22} />
+              </button>
+              <button onClick={(e) => onDelete(e, t.id)} className="p-4 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-all"><Lucide.Trash2 size={22} /></button>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* MODAL DE DETALHES */}
       {selectedTrecho && (
         <div className="fixed inset-0 z-[2000] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[40px] shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90vh] flex flex-col overflow-hidden">
@@ -155,7 +165,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
             </div>
 
             <div className="p-6 overflow-y-auto space-y-8 flex-1">
-              {/* Info Card */}
               <div className="bg-slate-50 p-6 rounded-[32px] grid grid-cols-2 gap-4 border border-slate-100">
                 <div className="col-span-2 flex items-center gap-3 mb-2">
                    <div className="p-2 bg-blue-600 text-white rounded-xl shadow-lg"><Lucide.HardHat size={18} /></div>
@@ -180,7 +189,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
                 )}
               </div>
 
-              {/* Botão de Download */}
               <div className="flex justify-between items-center px-1">
                 <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.1em]">Galerias Técnicas</h4>
                 <button 
@@ -193,7 +201,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
                 </button>
               </div>
 
-              {/* Galeria ANTES */}
               {fotosAntes.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
@@ -210,7 +217,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
                 </div>
               )}
 
-              {/* Galeria DEPOIS */}
               {fotosDepois.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">

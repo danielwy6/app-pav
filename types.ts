@@ -1,3 +1,4 @@
+
 export interface SyncMetadata {
   isDirty?: boolean;
   lastSyncedAt?: string;
@@ -52,6 +53,7 @@ export type TipoServico = 'RETIRADA_MEIO_FIO' | 'ASSENTAMENTO_MEIO_FIO';
 export interface ServicoComplementar extends SyncMetadata {
   id: string;
   ruaId: string;
+  trechoId?: string; // Vínculo com o trecho
   tipo: TipoServico;
   quantidade: number;
   data: string;

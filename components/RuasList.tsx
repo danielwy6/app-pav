@@ -27,6 +27,12 @@ const RuasList: React.FC<{ medicaoId: string, onNavigate: any }> = ({ medicaoId,
     }
   };
 
+  const onEdit = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onNavigate('FORM_RUA', { selectedMedicaoId: medicaoId, editingId: id });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -52,7 +58,20 @@ const RuasList: React.FC<{ medicaoId: string, onNavigate: any }> = ({ medicaoId,
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">{r.bairro}</p>
               </div>
             </div>
-            <button onClick={(e) => onDelete(e, r.id)} className="p-4 text-red-300 hover:text-red-500 active:scale-90 transition-all"><Lucide.Trash2 size={22} /></button>
+            <div className="flex gap-2">
+              <button 
+                onClick={(e) => onEdit(e, r.id)} 
+                className="p-4 text-slate-300 hover:text-blue-500 active:scale-90 transition-all"
+              >
+                <Lucide.Edit3 size={22} />
+              </button>
+              <button 
+                onClick={(e) => onDelete(e, r.id)} 
+                className="p-4 text-red-300 hover:text-red-500 active:scale-90 transition-all"
+              >
+                <Lucide.Trash2 size={22} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

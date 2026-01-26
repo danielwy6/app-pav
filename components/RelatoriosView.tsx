@@ -14,7 +14,8 @@ import {
   Image as ImageIcon,
   Filter,
   ChevronRight,
-  Printer
+  Printer,
+  Wrench
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
@@ -78,7 +79,11 @@ const RelatoriosView: React.FC = () => {
       filteredTrechos = filteredTrechos.filter(t => t.profissionalId === selProfissional);
     }
 
-    return { trechos: filteredTrechos, contratos: allContratos, medicoes: allMeds, ruas: allRuas, servicos: allServicos };
+    // Filtrar serviços também
+    const trechosIds = filteredTrechos.map(t => t.id);
+    const filteredServicos = allServicos.filter(s => s.trechoId && trechosIds.includes(s.trechoId));
+
+    return { trechos: filteredTrechos, contratos: allContratos, medicoes: allMeds, ruas: allRuas, servicos: filteredServicos };
   };
 
   const generateZip = async () => {
@@ -119,7 +124,7 @@ const RelatoriosView: React.FC = () => {
     setLoading(true);
     setProgress(includePhotos ? 'Gerando PDF com fotos...' : 'Gerando produtividade técnica...');
     try {
-      const { trechos, contratos: cList, medicoes: mList, ruas: rList } = await getFilteredData();
+      const { trechos, contratos: cList, medicoes: mList, ruas: rList, servicos: sList } = await getFilteredData();
       const doc = new jsPDF();
       let y = 20;
 
@@ -140,6 +145,7 @@ const RelatoriosView: React.FC = () => {
         const med = mList.find(m => m.id === rua?.medicaoId);
         const con = cList.find(c => c.id === med?.contratoId);
         const pro = profissionais.find(p => p.id === t.profissionalId);
+        const trechoServicos = sList.filter(s => s.trechoId === t.id);
 
         const conKey = con?.id || 'none';
         const medKey = med?.id || 'none';
@@ -149,9 +155,16 @@ const RelatoriosView: React.FC = () => {
         if (!groupedData[conKey]) groupedData[conKey] = { obj: con, meds: {}, total: 0 };
         if (!groupedData[conKey].meds[medKey]) groupedData[conKey].meds[medKey] = { obj: med, ruas: {}, total: 0 };
         if (!groupedData[conKey].meds[medKey].ruas[ruaKey]) groupedData[conKey].meds[medKey].ruas[ruaKey] = { obj: rua, pros: {}, total: 0 };
-        if (!groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey]) groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey] = { obj: pro, trechos: [], total: 0 };
+        if (!groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey]) groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey] = { obj: pro, trechos: [], total: 0, totalRet: 0, totalAss: 0 };
         
-        groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].trechos.push(t);
+        groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].trechos.push({ ...t, servicos: trechoServicos });
+        
+        // Somar serviços do fiscal na rua
+        trechoServicos.forEach(s => {
+            if (s.tipo === 'RETIRADA_MEIO_FIO') groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].totalRet += s.quantidade;
+            else groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].totalAss += s.quantidade;
+        });
+
         groupedData[conKey].meds[medKey].ruas[ruaKey].pros[proKey].total += t.area;
         groupedData[conKey].meds[medKey].ruas[ruaKey].total += t.area;
         groupedData[conKey].meds[medKey].total += t.area;
@@ -160,16 +173,14 @@ const RelatoriosView: React.FC = () => {
 
       for (const cId in groupedData) {
         const con = groupedData[cId];
-        // Linha do Contrato
         doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.8); doc.line(20, y-6, 190, y-6);
-        doc.setFontSize(12); doc.setFont("helvetica", "bold"); doc.setTextColor(37, 99, 235);
+        doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(37, 99, 235);
         doc.text(`CONTRATO: ${con.obj?.numero || 'N/A'}`, 20, y);
-        doc.text(`TOTAL: ${con.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+        doc.text(`TOTAL CONTRATO: ${con.total.toFixed(2)} m²`, 190, y, { align: 'right' });
         y += 12;
 
         for (const mId in con.meds) {
           const med = con.meds[mId];
-          // Linha da Medição
           doc.setDrawColor(180); doc.setLineWidth(0.4); doc.line(25, y-6, 190, y-6);
           doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(80);
           doc.text(`MEDIÇÃO: ${med.obj?.numero || 'N/A'} (${med.obj?.periodo || 'N/A'})`, 25, y);
@@ -180,7 +191,6 @@ const RelatoriosView: React.FC = () => {
             const rua = med.ruas[rId];
             const tipoDesc = rua.obj?.tipoIntervencao === 'NOVA' ? '[PAVIMENTAÇÃO NOVA]' : '[RECUPERAÇÃO]';
             
-            // Linha da Rua
             doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(30, y-5, 190, y-5);
             doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(0);
             doc.text(`LOGRADOURO: ${rua.obj?.nome || 'N/A'} ${tipoDesc}`, 30, y);
@@ -192,12 +202,24 @@ const RelatoriosView: React.FC = () => {
               doc.text(`FISCAL: ${pro.obj?.nome || 'NÃO INFORMADO'}`, 35, y);
               y += 5;
 
-              // Tabela de Trechos
               for (const t of pro.trechos) {
                 if (y > 270) { doc.addPage(); header(); }
                 doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(100);
                 doc.text(`   - Trecho ${t.comprimento}m x ${t.larguraMedia}m = ${t.area.toFixed(2)} m² (Data: ${t.data})`, 38, y);
-                y += 5;
+                y += 4;
+
+                // Listar serviços do trecho
+                if (t.servicos && t.servicos.length > 0) {
+                    doc.setFont("helvetica", "italic"); doc.setFontSize(7);
+                    t.servicos.forEach((s: any) => {
+                        const sLabel = s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada Meio-fio' : 'Assentamento Meio-fio';
+                        doc.text(`     [Serviço] ${sLabel}: ${s.quantidade.toFixed(2)} metros`, 42, y);
+                        y += 4;
+                    });
+                    doc.setFont("helvetica", "normal");
+                } else {
+                    y += 1;
+                }
 
                 if (includePhotos && t.fotos && t.fotos.length > 0) {
                   y += 2;
@@ -215,7 +237,11 @@ const RelatoriosView: React.FC = () => {
               }
               // Subtotal do Profissional
               doc.setFontSize(8); doc.setFont("helvetica", "bolditalic"); doc.setTextColor(120);
-              doc.text(`Subtotal do Profissional no Logradouro: ${pro.total.toFixed(2)} m²`, 190, y, { align: 'right' });
+              let servsInfo = '';
+              if (pro.totalRet > 0) servsInfo += ` | Retirada: ${pro.totalRet.toFixed(2)}m`;
+              if (pro.totalAss > 0) servsInfo += ` | Assentamento: ${pro.totalAss.toFixed(2)}m`;
+              
+              doc.text(`Subtotal do Fiscal: ${pro.total.toFixed(2)} m²${servsInfo}`, 190, y, { align: 'right' });
               y += 8;
               if (y > 270) { doc.addPage(); header(); }
             }

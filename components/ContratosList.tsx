@@ -18,13 +18,19 @@ const ContratosList: React.FC<{ onNavigate: any }> = ({ onNavigate }) => {
 
   const onDelete = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
-    e.stopPropagation(); // ESSENCIAL: Impede que o clique "vaze" para o card
+    e.stopPropagation();
     
     if (confirm("⚠️ APAGAR CONTRATO?\n\nEsta ação excluirá permanentemente este contrato e TODAS as medições e fotos vinculadas.")) {
       setLoading(true);
       await db.deleteContratoCascade(id);
       await load();
     }
+  };
+
+  const onEdit = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onNavigate('FORM_CONTRATO', { editingId: id });
   };
 
   return (
@@ -56,12 +62,20 @@ const ContratosList: React.FC<{ onNavigate: any }> = ({ onNavigate }) => {
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Contrato de Manutenção</p>
                 </div>
               </div>
-              <button 
-                onClick={(e) => onDelete(e, item.id)} 
-                className="p-4 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-all"
-              >
-                <Lucide.Trash2 size={22} />
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={(e) => onEdit(e, item.id)} 
+                  className="p-4 bg-slate-50 text-slate-400 rounded-2xl active:scale-90 transition-all"
+                >
+                  <Lucide.Edit3 size={22} />
+                </button>
+                <button 
+                  onClick={(e) => onDelete(e, item.id)} 
+                  className="p-4 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-all"
+                >
+                  <Lucide.Trash2 size={22} />
+                </button>
+              </div>
             </div>
           ))
         )}
