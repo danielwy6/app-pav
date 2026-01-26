@@ -340,6 +340,10 @@ const RelatoriosView: React.FC = () => {
             <option value="CONCRETO">Concreto</option>
             <option value="INTERTRAVADO">Intertravado (Geral)</option>
           </select>
+          <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase" value={selProfissional} onChange={(e) => setSelProfissional(e.target.value)}>
+            <option value="TODOS">Responsável Técnico: TODOS</option>
+            {profissionais.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+          </select>
           <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs uppercase" value={selRua} onChange={(e) => setSelRua(e.target.value)}>
             <option value="TODOS">Todos os Logradouros</option>
             {filteredRuas.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
