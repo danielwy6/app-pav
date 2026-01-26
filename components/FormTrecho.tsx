@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db';
-import { Trecho, Profissional, Rua, FotoEvidencia, ServicoComplementar, TipoServico } from '../types';
+import { Trecho, Profissional, Rua, FotoEvidencia, ServicoComplementar, TipoServico, TipoIntervencao, TipoPavimentacao } from '../types';
 import L from 'leaflet';
 import { 
   Camera, 
@@ -14,10 +14,11 @@ import {
   Ruler, 
   UserPlus, 
   Check,
-  Trash2,
   Wrench,
   PlusCircle,
-  RotateCcw
+  RotateCcw,
+  Box,
+  Layers
 } from 'lucide-react';
 
 interface FormTrechoProps {
@@ -26,6 +27,17 @@ interface FormTrechoProps {
   onSave: () => void;
   onCancel: () => void;
 }
+
+const PAVIMENTOS: { id: TipoPavimentacao; label: string }[] = [
+  { id: 'PEDRA_TOSCA', label: 'Pedra Tosca' },
+  { id: 'INTERTRAVADO_H4', label: 'Intertravado H4' },
+  { id: 'INTERTRAVADO_H6', label: 'Intertravado H6' },
+  { id: 'INTERTRAVADO_H8', label: 'Intertravado H8' },
+  { id: 'INTERTRAVADO_SEXTAVADO_H8', label: 'Intert. Sextavado H8' },
+  { id: 'CONCRETO', label: 'Concreto' },
+  { id: 'PARALELEPIPEDO', label: 'Paralelepípedo' },
+  { id: 'PEDRA_PORTUGUESA', label: 'Pedra Portuguesa' },
+];
 
 const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) => {
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
@@ -39,22 +51,33 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
   
   const [fotosAntes, setFotosAntes] = useState<FotoEvidencia[]>([]);
   const [fotosDepois, setFotosDepois] = useState<FotoEvidencia[]>([]);
-  
-  // Serviços Adicionais
   const [servicosAdicionais, setServicosAdicionais] = useState<{tipo: TipoServico, quantidade: number}[]>([]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markerInstance = useRef<L.Marker | null>(null);
-  
   const fileInputAntesRef = useRef<HTMLInputElement>(null);
   const fileInputDepoisRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Partial<Trecho>>({
-    ruaId, comprimento: 0, larguraMedia: 0, area: 0, profissionalId: '', latitude: -4.1017, longitude: -38.4897, observacoes: ''
+    ruaId, 
+    comprimento: 0, 
+    larguraMedia: 0, 
+    area: 0, 
+    espessura: undefined, 
+    profissionalId: '', 
+    latitude: -4.1017, 
+    longitude: -38.4897, 
+    observacoes: '',
+    tipoIntervencao: 'RECUPERACAO',
+    tipoPavimentacao: 'PEDRA_TOSCA'
   });
 
-  const currentArea = (Number(formData.comprimento || 0) * Number(formData.larguraMedia || 0));
+  const isConcrete = formData.tipoPavimentacao === 'CONCRETO';
+  const hasThickness = isConcrete && formData.espessura && formData.espessura > 0;
+  
+  const currentCalc = (Number(formData.comprimento || 0) * Number(formData.larguraMedia || 0) * (hasThickness ? Number(formData.espessura) : 1));
+  const unit = hasThickness ? 'm³' : 'm²';
 
   useEffect(() => {
     loadInitialData();
@@ -75,12 +98,9 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         setFormData(existing);
         setFotosAntes(existing.fotos?.filter(f => f.tipo === 'Antes') || []);
         setFotosDepois(existing.fotos?.filter(f => f.tipo === 'Depois') || []);
-        
-        // Carregar serviços vinculados a este trecho
         const allServicos = await db.getAll<ServicoComplementar>('servicos');
         const trechoServicos = allServicos.filter(s => s.trechoId === id);
         setServicosAdicionais(trechoServicos.map(s => ({ tipo: s.tipo, quantidade: s.quantidade })));
-        
         initMap(existing.latitude, existing.longitude);
       }
     } else {
@@ -101,23 +121,14 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
     if (!newProNome.trim()) return;
     setSavingPro(true);
     try {
-      const newPro: Profissional = {
-        id: crypto.randomUUID(),
-        nome: newProNome.toUpperCase(),
-        status: 'Ativo',
-        isDirty: true
-      };
+      const newPro: Profissional = { id: crypto.randomUUID(), nome: newProNome.toUpperCase(), status: 'Ativo', isDirty: true };
       await db.save('profissionais', newPro);
       const updatedList = await db.getAll<Profissional>('profissionais');
       setProfissionais(updatedList.filter(p => p.status === 'Ativo'));
       setFormData(prev => ({ ...prev, profissionalId: newPro.id }));
       setNewProNome('');
       setShowNewProForm(false);
-    } catch (err) {
-      alert("Erro ao salvar profissional.");
-    } finally {
-      setSavingPro(false);
-    }
+    } catch (err) { alert("Erro ao salvar."); } finally { setSavingPro(false); }
   };
 
   const initMap = (lat: number, lng: number) => {
@@ -152,9 +163,7 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
     Array.from(files).forEach((file: File) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const novaFoto: FotoEvidencia = {
-          id: crypto.randomUUID(), base64: reader.result as string, tipo: tipo, data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR')
-        };
+        const novaFoto: FotoEvidencia = { id: crypto.randomUUID(), base64: reader.result as string, tipo: tipo, data: new Date().toLocaleDateString('pt-BR'), hora: new Date().toLocaleTimeString('pt-BR') };
         if (tipo === 'Antes') setFotosAntes(prev => [...prev, novaFoto]);
         else setFotosDepois(prev => [...prev, novaFoto]);
       };
@@ -162,19 +171,9 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
     });
   };
 
-  const addServico = (tipo: TipoServico) => {
-    setServicosAdicionais(prev => [...prev, { tipo, quantidade: 0 }]);
-  };
-
-  const updateServicoQtd = (index: number, qtd: number) => {
-    const newServs = [...servicosAdicionais];
-    newServs[index].quantidade = qtd;
-    setServicosAdicionais(newServs);
-  };
-
-  const removeServico = (index: number) => {
-    setServicosAdicionais(prev => prev.filter((_, i) => i !== index));
-  };
+  const addServico = (tipo: TipoServico) => { setServicosAdicionais(prev => [...prev, { tipo, quantidade: 0 }]); };
+  const updateServicoQtd = (index: number, qtd: number) => { const newServs = [...servicosAdicionais]; newServs[index].quantidade = qtd; setServicosAdicionais(newServs); };
+  const removeServico = (index: number) => { setServicosAdicionais(prev => prev.filter((_, i) => i !== index)); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,38 +190,27 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         hora: formData.hora || new Date().toLocaleTimeString('pt-BR'),
         comprimento: Number(formData.comprimento),
         larguraMedia: Number(formData.larguraMedia),
-        area: currentArea,
+        espessura: isConcrete ? Number(formData.espessura) : undefined,
+        area: currentCalc,
         fotos: [...fotosAntes, ...fotosDepois],
         profissionalId: formData.profissionalId!,
+        tipoIntervencao: formData.tipoIntervencao as TipoIntervencao,
+        tipoPavimentacao: formData.tipoPavimentacao as TipoPavimentacao,
         observacoes: formData.observacoes,
         isDirty: true
       };
       await db.save('trechos', trecho);
-
-      // Salvar serviços complementares vinculados
-      // Primeiro, se for edição, removemos os serviços antigos deste trecho
       if (id) {
         const allServs = await db.getAll<ServicoComplementar>('servicos');
         const toDelete = allServs.filter(s => s.trechoId === id);
         for (const s of toDelete) await db.delete('servicos', s.id);
       }
-
       for (const s of servicosAdicionais) {
         if (s.quantidade > 0) {
-          const servico: ServicoComplementar = {
-            id: crypto.randomUUID(),
-            ruaId: formData.ruaId!,
-            trechoId: trechoId,
-            tipo: s.tipo,
-            quantidade: s.quantidade,
-            data: trecho.data,
-            hora: trecho.hora,
-            isDirty: true
-          };
+          const servico: ServicoComplementar = { id: crypto.randomUUID(), ruaId: formData.ruaId!, trechoId: trechoId, tipo: s.tipo, quantidade: s.quantidade, data: trecho.data, hora: trecho.hora, isDirty: true };
           await db.save('servicos', servico);
         }
       }
-
       onSave();
     } catch (err) { alert("Erro ao salvar."); } finally { setLoading(false); }
   };
@@ -236,18 +224,53 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         </button>
       </div>
 
-      <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-bold uppercase opacity-50 mb-1">Área Calculada</p>
-          <h2 className="text-4xl font-black">{currentArea.toFixed(2)} m²</h2>
-        </div>
-        <div className="bg-blue-600 p-4 rounded-2xl shadow-lg">
-          <Ruler size={28} />
-        </div>
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-2 gap-4">
+        {/* NOVAS OPÇÕES DE INTERVENÇÃO E PAVIMENTAÇÃO */}
+        <div className="bg-white p-6 rounded-[32px] border border-slate-200 space-y-8 shadow-sm">
+          <div className="space-y-3">
+             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Tipo de Intervenção</label>
+             <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setFormData(p => ({...p, tipoIntervencao: 'NOVA'}))} className={`flex flex-col items-center gap-3 p-5 rounded-[24px] border-2 transition-all ${formData.tipoIntervencao === 'NOVA' ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-100' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <PlusCircle size={32} className={formData.tipoIntervencao === 'NOVA' ? 'text-white' : 'text-slate-300'} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Pavimentação Nova</span>
+                </button>
+                <button type="button" onClick={() => setFormData(p => ({...p, tipoIntervencao: 'RECUPERACAO'}))} className={`flex flex-col items-center gap-3 p-5 rounded-[24px] border-2 transition-all ${formData.tipoIntervencao === 'RECUPERACAO' ? 'bg-amber-500 border-amber-500 text-white shadow-xl shadow-amber-100' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                  <RotateCcw size={32} className={formData.tipoIntervencao === 'RECUPERACAO' ? 'text-white' : 'text-slate-300'} />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-center">Recuperação</span>
+                </button>
+             </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+              <Layers size={14} className="text-blue-600" /> Tipo de Pavimentação
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {PAVIMENTOS.map(p => (
+                <button 
+                  key={p.id}
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, tipoPavimentacao: p.id }))}
+                  className={`p-3 rounded-2xl border-2 text-[10px] font-black uppercase tracking-tight transition-all text-center ${formData.tipoPavimentacao === p.id ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase opacity-50 mb-1">{hasThickness ? 'Volume Calculado' : 'Área Calculada'}</p>
+            <h2 className="text-4xl font-black">{currentCalc.toFixed(2)} {unit}</h2>
+          </div>
+          <div className="bg-blue-600 p-4 rounded-2xl shadow-lg">
+            {hasThickness ? <Box size={28} /> : <Ruler size={28} />}
+          </div>
+        </div>
+
+        <div className={`bg-white p-5 rounded-2xl shadow-sm border border-slate-200 grid ${isConcrete ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}>
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Comp. (m)</label>
             <input type="number" step="0.01" className="w-full p-4 bg-slate-50 border rounded-xl font-black text-xl outline-none" value={formData.comprimento || ''} onChange={e => setFormData(prev => ({ ...prev, comprimento: Number(e.target.value) }))} />
@@ -256,161 +279,81 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Larg. (m)</label>
             <input type="number" step="0.01" className="w-full p-4 bg-slate-50 border rounded-xl font-black text-xl outline-none" value={formData.larguraMedia || ''} onChange={e => setFormData(prev => ({ ...prev, larguraMedia: Number(e.target.value) }))} />
           </div>
+          {isConcrete && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Espess. (m)</label>
+              <input type="number" step="0.01" className="w-full p-4 bg-blue-50 border border-blue-100 rounded-xl font-black text-xl outline-none text-blue-600" value={formData.espessura || ''} onChange={e => setFormData(prev => ({ ...prev, espessura: Number(e.target.value) }))} placeholder="0.10" />
+            </div>
+          )}
         </div>
 
-        {/* SEÇÃO SERVIÇOS ADICIONAIS */}
         <div className="bg-white p-6 rounded-[32px] border border-slate-200 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Wrench size={16} className="text-blue-600" /> Serviços Adicionais (Meio-fio)
-                </h3>
-            </div>
-            
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wrench size={16} className="text-blue-600" /> Serviços Adicionais (Meio-fio)</h3>
             <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => addServico('RETIRADA_MEIO_FIO')} className="p-3 bg-amber-50 text-amber-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-amber-100">
-                    <RotateCcw size={14} /> Retirada
-                </button>
-                <button type="button" onClick={() => addServico('ASSENTAMENTO_MEIO_FIO')} className="p-3 bg-blue-50 text-blue-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-blue-100">
-                    <PlusCircle size={14} /> Assentamento
-                </button>
+                <button type="button" onClick={() => addServico('RETIRADA_MEIO_FIO')} className="p-3 bg-amber-50 text-amber-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-amber-100"><RotateCcw size={14} /> Retirada</button>
+                <button type="button" onClick={() => addServico('ASSENTAMENTO_MEIO_FIO')} className="p-3 bg-blue-50 text-blue-600 rounded-xl font-bold text-[9px] uppercase flex items-center justify-center gap-2 border border-blue-100"><PlusCircle size={14} /> Assentamento</button>
             </div>
-
             {servicosAdicionais.length > 0 && (
-                <div className="space-y-3 pt-2">
-                    {servicosAdicionais.map((s, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                            <div className={`p-2 rounded-lg ${s.tipo === 'RETIRADA_MEIO_FIO' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-                                {s.tipo === 'RETIRADA_MEIO_FIO' ? <RotateCcw size={16} /> : <PlusCircle size={16} />}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">
-                                    {s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada (m)' : 'Assentamento (m)'}
-                                </p>
-                                <input 
-                                    type="number" 
-                                    step="0.01" 
-                                    className="w-full bg-transparent font-black text-slate-800 outline-none"
-                                    placeholder="0.00"
-                                    value={s.quantidade || ''}
-                                    onChange={(e) => updateServicoQtd(idx, Number(e.target.value))}
-                                />
-                            </div>
-                            <button type="button" onClick={() => removeServico(idx)} className="p-2 text-slate-300 hover:text-red-500">
-                                <X size={18} />
-                            </button>
+                <div className="space-y-3 pt-2">{servicosAdicionais.map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        <div className={`p-2 rounded-lg ${s.tipo === 'RETIRADA_MEIO_FIO' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                            {s.tipo === 'RETIRADA_MEIO_FIO' ? <RotateCcw size={16} /> : <PlusCircle size={16} />}
                         </div>
-                    ))}
-                </div>
+                        <div className="flex-1">
+                            <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">{s.tipo === 'RETIRADA_MEIO_FIO' ? 'Retirada (m)' : 'Assentamento (m)'}</p>
+                            <input type="number" step="0.01" className="w-full bg-transparent font-black text-slate-800 outline-none" placeholder="0.00" value={s.quantidade || ''} onChange={(e) => updateServicoQtd(idx, Number(e.target.value))} />
+                        </div>
+                        <button type="button" onClick={() => removeServico(idx)} className="p-2 text-slate-300 hover:text-red-500"><X size={18} /></button>
+                    </div>
+                ))}</div>
             )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* SEÇÃO ANTES */}
             <div className="bg-white p-5 rounded-3xl border border-slate-200 space-y-4">
-                <label className="block text-[10px] font-black text-slate-500 uppercase flex justify-between tracking-widest">
-                  ESTADO ANTES 
-                  <span className={`px-2 rounded-full ${fotosAntes.length > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                    {fotosAntes.length} FOTO(S)
-                  </span>
-                </label>
-                
-                <button type="button" onClick={() => fileInputAntesRef.current?.click()} className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-3 border-2 border-dashed border-slate-200 active:scale-95 active:bg-slate-200 transition-all">
-                  <Camera size={18} /> Adicionar Antes
-                </button>
+                <label className="block text-[10px] font-black text-slate-500 uppercase flex justify-between tracking-widest">ESTADO ANTES <span className={`px-2 rounded-full ${fotosAntes.length > 0 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>{fotosAntes.length} FOTO(S)</span></label>
+                <button type="button" onClick={() => fileInputAntesRef.current?.click()} className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-3 border-2 border-dashed border-slate-200 active:scale-95 transition-all"><Camera size={18} /> Adicionar Antes</button>
                 <input type="file" ref={fileInputAntesRef} className="hidden" accept="image/*" capture="environment" multiple onChange={(e) => handleAddPhoto(e, 'Antes')} />
-                
                 {fotosAntes.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 pt-2">
-                    {fotosAntes.map(f => (
-                      <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-100 group">
-                        <img src={f.base64} className="w-full h-full object-cover" alt="Antes" />
-                        <button 
-                          type="button" 
-                          onClick={() => setFotosAntes(prev => prev.filter(x => x.id !== f.id))}
-                          className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-lg opacity-90 active:scale-90"
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <div className="grid grid-cols-4 gap-2 pt-2">{fotosAntes.map(f => (
+                    <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-100 group">
+                      <img src={f.base64} className="w-full h-full object-cover" alt="Antes" />
+                      <button type="button" onClick={() => setFotosAntes(prev => prev.filter(x => x.id !== f.id))} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-lg opacity-90"><X size={10} /></button>
+                    </div>
+                  ))}</div>
                 )}
             </div>
-
-            {/* SEÇÃO DEPOIS */}
             <div className="bg-white p-5 rounded-3xl border border-slate-200 space-y-4">
-                <label className="block text-[10px] font-black text-slate-500 uppercase flex justify-between tracking-widest">
-                  ESTADO DEPOIS 
-                  <span className={`px-2 rounded-full ${fotosDepois.length > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                    {fotosDepois.length} FOTO(S)
-                  </span>
-                </label>
-
-                <button type="button" onClick={() => fileInputDepoisRef.current?.click()} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-3 shadow-lg shadow-blue-100 active:scale-95 active:bg-blue-700 transition-all">
-                  <Camera size={18} /> Adicionar Depois
-                </button>
+                <label className="block text-[10px] font-black text-slate-500 uppercase flex justify-between tracking-widest">ESTADO DEPOIS <span className={`px-2 rounded-full ${fotosDepois.length > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{fotosDepois.length} FOTO(S)</span></label>
+                <button type="button" onClick={() => fileInputDepoisRef.current?.click()} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-3 shadow-lg shadow-blue-100 active:scale-95 transition-all"><Camera size={18} /> Adicionar Depois</button>
                 <input type="file" ref={fileInputDepoisRef} className="hidden" accept="image/*" capture="environment" multiple onChange={(e) => handleAddPhoto(e, 'Depois')} />
-                
                 {fotosDepois.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 pt-2">
-                    {fotosDepois.map(f => (
-                      <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-100 group">
-                        <img src={f.base64} className="w-full h-full object-cover" alt="Depois" />
-                        <button 
-                          type="button" 
-                          onClick={() => setFotosDepois(prev => prev.filter(x => x.id !== f.id))}
-                          className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-lg opacity-90 active:scale-90"
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <div className="grid grid-cols-4 gap-2 pt-2">{fotosDepois.map(f => (
+                    <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-100 group">
+                      <img src={f.base64} className="w-full h-full object-cover" alt="Depois" />
+                      <button type="button" onClick={() => setFotosDepois(prev => prev.filter(x => x.id !== f.id))} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-lg opacity-90"><X size={10} /></button>
+                    </div>
+                  ))}</div>
                 )}
             </div>
         </div>
 
         <div className="bg-white p-6 rounded-[32px] border border-slate-200 space-y-4 shadow-sm">
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Observações Técnicas</label>
-            <textarea 
-              className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold text-slate-700 h-32 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all" 
-              placeholder="Descreva detalhes da execução..."
-              value={formData.observacoes}
-              onChange={e => setFormData(p => ({ ...p, observacoes: e.target.value }))}
-            />
+            <textarea className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold text-slate-700 h-32 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all" placeholder="Descreva detalhes da execução..." value={formData.observacoes} onChange={e => setFormData(p => ({ ...p, observacoes: e.target.value }))} />
         </div>
 
         <div className="space-y-3">
           <div className="flex justify-between items-end ml-1">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Profissional Responsável</label>
-            <button 
-              type="button" 
-              onClick={() => setShowNewProForm(!showNewProForm)}
-              className="flex items-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest active:scale-90"
-            >
-              <UserPlus size={14} /> Novo Profissional
-            </button>
+            <button type="button" onClick={() => setShowNewProForm(!showNewProForm)} className="flex items-center gap-1 text-[10px] font-black text-blue-600 uppercase tracking-widest active:scale-90"><UserPlus size={14} /> Novo Profissional</button>
           </div>
-
           {showNewProForm && (
             <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex gap-2 animate-in fade-in slide-in-from-top-2">
-              <input 
-                className="flex-1 p-3 bg-white border border-blue-200 rounded-xl font-bold uppercase text-xs outline-none focus:ring-2 focus:ring-blue-300"
-                placeholder="NOME DO PROFISSIONAL"
-                value={newProNome}
-                onChange={e => setNewProNome(e.target.value)}
-              />
-              <button 
-                type="button"
-                onClick={handleQuickSavePro}
-                disabled={savingPro || !newProNome}
-                className="bg-blue-600 text-white p-3 rounded-xl shadow-lg active:scale-90 transition-all disabled:opacity-50"
-              >
-                {savingPro ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}
-              </button>
+              <input className="flex-1 p-3 bg-white border border-blue-200 rounded-xl font-bold uppercase text-xs outline-none focus:ring-2 focus:ring-blue-300" placeholder="NOME DO PROFISSIONAL" value={newProNome} onChange={e => setNewProNome(e.target.value)} />
+              <button type="button" onClick={handleQuickSavePro} disabled={savingPro || !newProNome} className="bg-blue-600 text-white p-3 rounded-xl shadow-lg active:scale-90 disabled:opacity-50">{savingPro ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}</button>
             </div>
           )}
-
           <select required className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-100" value={formData.profissionalId} onChange={e => setFormData(prev => ({ ...prev, profissionalId: e.target.value }))}>
             <option value="">Selecione o Profissional...</option>
             {profissionais.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
@@ -418,10 +361,8 @@ const FormTrecho: React.FC<FormTrechoProps> = ({ ruaId, id, onSave, onCancel }) 
         </div>
 
         <div className="flex gap-4">
-          <button type="button" onClick={onCancel} className="flex-1 py-5 bg-white text-slate-500 font-bold rounded-2xl border active:bg-slate-50 transition-colors uppercase text-xs tracking-widest">Cancelar</button>
-          <button type="submit" disabled={loading} className="flex-[1.8] py-5 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-100 flex items-center justify-center gap-2 active:scale-95 active:bg-blue-700 transition-all disabled:opacity-50">
-            {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR TRECHO
-          </button>
+          <button type="button" onClick={onCancel} className="flex-1 py-5 bg-white text-slate-500 font-bold rounded-2xl border active:bg-slate-50 uppercase text-xs tracking-widest">Cancelar</button>
+          <button type="submit" disabled={loading} className="flex-[1.8] py-5 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-100 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50">{loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR TRECHO</button>
         </div>
       </form>
     </div>

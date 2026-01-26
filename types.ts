@@ -36,6 +36,16 @@ export interface Medicao extends SyncMetadata {
 
 export type TipoIntervencao = 'NOVA' | 'RECUPERACAO';
 
+export type TipoPavimentacao = 
+  | 'PEDRA_TOSCA'
+  | 'INTERTRAVADO_H4'
+  | 'INTERTRAVADO_H6'
+  | 'INTERTRAVADO_H8'
+  | 'INTERTRAVADO_SEXTAVADO_H8'
+  | 'CONCRETO'
+  | 'PARALELEPIPEDO'
+  | 'PEDRA_PORTUGUESA';
+
 export interface Rua extends SyncMetadata {
   id: string;
   medicaoId: string;
@@ -45,7 +55,6 @@ export interface Rua extends SyncMetadata {
   latitude?: number;
   longitude?: number;
   fotos?: FotoEvidencia[];
-  tipoIntervencao: TipoIntervencao;
 }
 
 export type TipoServico = 'RETIRADA_MEIO_FIO' | 'ASSENTAMENTO_MEIO_FIO';
@@ -53,7 +62,7 @@ export type TipoServico = 'RETIRADA_MEIO_FIO' | 'ASSENTAMENTO_MEIO_FIO';
 export interface ServicoComplementar extends SyncMetadata {
   id: string;
   ruaId: string;
-  trechoId?: string; // Vínculo com o trecho
+  trechoId?: string; 
   tipo: TipoServico;
   quantidade: number;
   data: string;
@@ -70,9 +79,12 @@ export interface Trecho extends SyncMetadata {
   hora: string;
   comprimento: number;
   larguraMedia: number;
-  area: number;
+  espessura?: number; 
+  area: number; 
   fotos: FotoEvidencia[];
   profissionalId: string;
+  tipoIntervencao: TipoIntervencao;
+  tipoPavimentacao: TipoPavimentacao;
   observacoes?: string;
 }
 

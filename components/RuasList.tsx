@@ -50,8 +50,9 @@ const RuasList: React.FC<{ medicaoId: string, onNavigate: any }> = ({ medicaoId,
             className="bg-white p-5 rounded-[32px] shadow-sm border border-slate-100 flex items-center justify-between active:bg-slate-50 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-4">
-              <div className={`p-4 rounded-2xl ${r.tipoIntervencao === 'NOVA' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'}`}>
-                {r.tipoIntervencao === 'NOVA' ? <Lucide.PlusCircle size={24} /> : <Lucide.RotateCcw size={24} />}
+              {/* Fix: Rua does not have tipoIntervencao. Using MapPin as default icon. */}
+              <div className="p-4 rounded-2xl bg-blue-50 text-blue-600">
+                <Lucide.MapPin size={24} />
               </div>
               <div>
                 <h3 className="font-black text-slate-800 text-sm uppercase leading-none mb-1">{r.nome}</h3>
