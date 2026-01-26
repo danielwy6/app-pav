@@ -60,6 +60,9 @@ const ContratosList: React.FC<{ onNavigate: any }> = ({ onNavigate }) => {
                 <div>
                   <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-none mb-1">Nº {item.numero}</h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Contrato de Manutenção</p>
+                  {item.importedAt && (
+                    <p className="text-[8px] text-blue-500 font-bold uppercase mt-1">Importado na data: {item.importedAt}</p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">

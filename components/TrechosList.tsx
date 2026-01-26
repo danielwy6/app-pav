@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Lucide from 'lucide-react';
 import { db } from '../db.ts';
-import { Trecho, Rua, Profissional } from '../types.ts';
+import { Trecho, Rua, Profissional, FotoEvidencia } from '../types.ts';
 import JSZip from 'jszip';
 
 const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNavigate }) => {
@@ -12,6 +12,7 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
   const [loading, setLoading] = useState(true);
   const [selectedTrecho, setSelectedTrecho] = useState<Trecho | null>(null);
   const [exportingZip, setExportingZip] = useState(false);
+  const [exportingStreetZip, setExportingStreetZip] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -46,6 +47,39 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
     e.preventDefault();
     e.stopPropagation();
     onNavigate('FORM_TRECHO', { selectedRuaId: ruaId, editingId: id });
+  };
+
+  const downloadStreetPhotosZip = async () => {
+    if (!rua || !rua.fotos || rua.fotos.length === 0) {
+      alert("Nenhuma foto do estado inicial disponível.");
+      return;
+    }
+
+    setExportingStreetZip(true);
+    try {
+      const zip = new JSZip();
+      const folder = zip.folder(`ESTADO_INICIAL_${rua.nome.replace(/\s+/g, '_')}`);
+      
+      rua.fotos.forEach((foto, index) => {
+        const base64Data = foto.base64.split(',')[1];
+        const filename = `inicial_${index + 1}.jpg`;
+        folder?.file(filename, base64Data, { base64: true });
+      });
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `INICIAL_${rua.nome.substring(0, 15).replace(/\s+/g, '_')}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Erro ao gerar arquivo ZIP das fotos da rua.");
+    } finally {
+      setExportingStreetZip(false);
+    }
   };
 
   const downloadPhotosZip = async (trecho: Trecho) => {
@@ -115,8 +149,35 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
         <Lucide.Ruler size={100} className="absolute -right-5 -bottom-5 opacity-10 rotate-12" />
       </div>
 
+      {/* Galeria de Fotos do Estado Inicial da Rua */}
+      {rua?.fotos && rua.fotos.length > 0 && (
+        <div className="bg-white p-5 rounded-[32px] border border-slate-200 shadow-sm space-y-3">
+          <div className="flex justify-between items-center px-1">
+            <div>
+              <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Estado Inicial do Logradouro</h3>
+              <p className="text-[8px] font-bold text-slate-400 uppercase">Fotos anexadas na criação da rua</p>
+            </div>
+            <button 
+              onClick={downloadStreetPhotosZip}
+              disabled={exportingStreetZip}
+              className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50"
+            >
+              {exportingStreetZip ? <Lucide.Loader2 className="animate-spin" size={12} /> : <Lucide.FileArchive size={12} />}
+              Baixar Fotos (ZIP)
+            </button>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2 snap-x">
+            {rua.fotos.map((f, i) => (
+              <div key={i} className="min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-slate-100 shadow-sm snap-start">
+                <img src={f.base64} className="w-full h-full object-cover" alt="Inicial" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
-        <h2 className="text-slate-400 font-black text-[10px] uppercase tracking-widest">{items.length} Lançamentos</h2>
+        <h2 className="text-slate-400 font-black text-[10px] uppercase tracking-widest">{items.length} Lançamentos de Trechos</h2>
         <button onClick={() => onNavigate('FORM_TRECHO', { selectedRuaId: ruaId })} className="bg-blue-600 text-white px-5 py-3 rounded-full font-black text-xs shadow-lg active:scale-95 transition-all flex items-center gap-2">
           <Lucide.Plus size={18} /> Novo Trecho
         </button>

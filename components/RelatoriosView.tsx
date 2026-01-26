@@ -71,19 +71,27 @@ const RelatoriosView: React.FC = () => {
     const allContratos = await db.getAll<Contrato>('contratos');
     
     let filteredTrechos = allTrechos;
+    let filteredRuasBase = allRuas;
 
+    // Filtro por Contrato
     if (selContrato !== 'TODOS') {
       const medsIds = allMeds.filter(m => m.contratoId === selContrato).map(m => m.id);
-      const ruasIds = allRuas.filter(r => medsIds.includes(r.medicaoId)).map(r => r.id);
-      filteredTrechos = filteredTrechos.filter(t => ruasIds.includes(t.ruaId));
+      filteredRuasBase = allRuas.filter(r => medsIds.includes(r.medicaoId));
+      filteredTrechos = filteredTrechos.filter(t => filteredRuasBase.some(fr => fr.id === t.ruaId));
     }
     
+    // Filtro por Medição
     if (selMedicao !== 'TODOS') {
-      const ruasIds = allRuas.filter(r => r.medicaoId === selMedicao).map(r => r.id);
-      filteredTrechos = filteredTrechos.filter(t => ruasIds.includes(t.ruaId));
+      filteredRuasBase = allRuas.filter(r => r.medicaoId === selMedicao);
+      filteredTrechos = filteredTrechos.filter(t => filteredRuasBase.some(fr => fr.id === t.ruaId));
     }
     
-    if (selRua !== 'TODOS') filteredTrechos = filteredTrechos.filter(t => t.ruaId === selRua);
+    // Filtro por Rua
+    if (selRua !== 'TODOS') {
+      filteredRuasBase = filteredRuasBase.filter(r => r.id === selRua);
+      filteredTrechos = filteredTrechos.filter(t => t.ruaId === selRua);
+    }
+    
     if (selProfissional !== 'TODOS') filteredTrechos = filteredTrechos.filter(t => t.profissionalId === selProfissional);
 
     if (selPavimentacao !== 'TODOS') {
@@ -94,7 +102,12 @@ const RelatoriosView: React.FC = () => {
       }
     }
 
-    return { trechos: filteredTrechos, contratos: allContratos, medicoes: allMeds, ruas: allRuas };
+    return { 
+      trechos: filteredTrechos, 
+      contratos: allContratos, 
+      medicoes: allMeds, 
+      ruas: filteredRuasBase 
+    };
   };
 
   const generatePDF = async (includePhotos: boolean) => {
@@ -173,6 +186,8 @@ const RelatoriosView: React.FC = () => {
       const grouped: any = {};
       trechos.forEach(t => {
         const rua = rList.find(r => r.id === t.ruaId);
+        if (!rua) return; // Fora do filtro
+
         const med = mList.find(m => m.id === rua?.medicaoId);
         const con = cList.find(c => c.id === med?.contratoId);
         const pro = profissionais.find(p => p.id === t.profissionalId);
@@ -290,23 +305,51 @@ const RelatoriosView: React.FC = () => {
     try {
       const { trechos, contratos: cList, medicoes: mList, ruas: rList } = await getFilteredData();
       const zip = new JSZip();
-      for (const t of trechos) {
+
+      // 1. Processar Fotos dos Logradouros (FOTOS DA RUA)
+      rList.forEach(r => {
+        if (r.fotos && r.fotos.length > 0) {
+          const med = mList.find(m => m.id === r.medicaoId);
+          const con = cList.find(c => c.id === med?.contratoId);
+          
+          // Caminho: Contrato / Medicao / Logradouro / ESTADO_INICIAL_LOGRADOURO
+          const path = `${con?.numero || 'Sem_Contrato'}/Med_${med?.numero || 'Sem_Med'}/${r.nome || 'Rua_NI'}/ESTADO_INICIAL_LOGRADOURO`;
+          const folder = zip.folder(path);
+          
+          r.fotos.forEach((f, i) => {
+            const data = f.base64.split(',')[1];
+            folder?.file(`${f.tipo}_${i+1}.jpg`, data, { base64: true });
+          });
+        }
+      });
+
+      // 2. Processar Fotos dos Trechos
+      trechos.forEach(t => {
         const rua = rList.find(r => r.id === t.ruaId);
-        const med = mList.find(m => m.id === rua?.medicaoId);
+        if (!rua) return;
+
+        const med = mList.find(m => m.id === rua.medicaoId);
         const con = cList.find(c => c.id === med?.contratoId);
-        const path = `${con?.numero || 'Sem_Contrato'}/Med_${med?.numero || 'Sem_Med'}/${rua?.nome || 'Rua_NI'}/Trecho_${t.id.substring(0, 5)}`;
+        
+        // Caminho: Contrato / Medicao / Logradouro / Trecho_ID
+        const path = `${con?.numero || 'Sem_Contrato'}/Med_${med?.numero || 'Sem_Med'}/${rua.nome || 'Rua_NI'}/TRECHO_${t.id.substring(0, 5)}`;
         const folder = zip.folder(path);
+        
         t.fotos.forEach((f, i) => {
           const data = f.base64.split(',')[1];
           folder?.file(`${f.tipo}_${i+1}.jpg`, data, { base64: true });
         });
-      }
+      });
+
       const content = await zip.generateAsync({ type: "blob" });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(content);
-      link.download = `FOTOS_FISCALIZACAO_${new Date().getTime()}.zip`;
+      link.download = `ACERVO_FOTOGRAFICO_PAVINSPECT_${new Date().getTime()}.zip`;
       link.click();
-    } catch (e) { alert("Erro ao gerar ZIP."); }
+    } catch (e) { 
+      console.error(e);
+      alert("Erro ao gerar ZIP."); 
+    }
     setLoading(false);
   };
 
@@ -355,7 +398,7 @@ const RelatoriosView: React.FC = () => {
         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Geração de Documentos</h3>
         <ReportCard icon={<FileText size={28} />} title="Boletim de Fiscalização (PDF)" desc="Técnico: Visual moderno com hierarquia formal e colorida." color="bg-blue-600" onClick={() => generatePDF(false)} disabled={loading} />
         <ReportCard icon={<ImageIcon size={28} />} title="Boletim com Evidências (PDF)" desc="Dossiê: Produtividade com fotos separadas por Antes/Depois." color="bg-emerald-500" onClick={() => generatePDF(true)} disabled={loading} />
-        <ReportCard icon={<FileArchive size={28} />} title="Acervo Fotográfico (ZIP)" desc="Arquivos originais organizados em pastas." color="bg-amber-500" onClick={generateZip} disabled={loading} />
+        <ReportCard icon={<FileArchive size={28} />} title="Acervo Fotográfico (ZIP)" desc="Arquivos originais organizados em pastas (Contrato/Medição/Rua)." color="bg-amber-500" onClick={generateZip} disabled={loading} />
       </div>
 
       {loading && (

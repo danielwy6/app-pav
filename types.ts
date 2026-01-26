@@ -24,6 +24,7 @@ export interface Profissional extends SyncMetadata {
 export interface Contrato extends SyncMetadata {
   id: string;
   numero: string;
+  importedAt?: string;
 }
 
 export interface Medicao extends SyncMetadata {

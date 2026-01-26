@@ -108,13 +108,20 @@ class Database {
   async importAllData(json: string): Promise<void> {
     const data = JSON.parse(json);
     const stores = ['contratos', 'medicoes', 'ruas', 'trechos', 'profissionais', 'servicos'];
+    const now = new Date().toLocaleString('pt-BR');
+
     for (const s of stores) {
       if (data[s] && Array.isArray(data[s])) {
         const store = await this.getStore(s, 'readwrite');
         for (const item of data[s]) {
+          const processedItem = { ...item, isDirty: item.isDirty ?? true };
+          // Adiciona metadados de importação apenas para contratos para exibição visual
+          if (s === 'contratos') {
+            processedItem.importedAt = now;
+          }
+          
           await new Promise<void>((resolve, reject) => {
-            // Ao importar, mantemos o ID mas marcamos como dirty para garantir que o novo aparelho tente sincronizar se necessário
-            const request = store.put({ ...item, isDirty: item.isDirty ?? true });
+            const request = store.put(processedItem);
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
           });
