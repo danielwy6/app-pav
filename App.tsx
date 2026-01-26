@@ -20,6 +20,7 @@ import FormProfissional from './components/FormProfissional.tsx';
 import MapaVisualizer from './components/MapaVisualizer.tsx';
 import RelatoriosView from './components/RelatoriosView.tsx';
 import SyncView from './components/SyncView.tsx';
+import RuasEmExecucaoList from './components/RuasEmExecucaoList.tsx';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({ view: 'DASHBOARD' });
@@ -51,7 +52,12 @@ const App: React.FC = () => {
     const { view } = state;
     if (view === 'MEDICOES') navigate('CONTRATOS');
     else if (view === 'RUAS') navigate('MEDICOES', { selectedContratoId: state.selectedContratoId });
-    else if (view === 'TRECHOS' || view === 'SERVICOS') navigate('RUAS', { selectedMedicaoId: state.selectedMedicaoId });
+    else if (view === 'TRECHOS' || view === 'SERVICOS') {
+        // Se veio da lista de Ruas em Execução, volta pra ela
+        if (state.view === 'RUAS_EM_EXECUCAO') navigate('DASHBOARD');
+        else navigate('RUAS', { selectedMedicaoId: state.selectedMedicaoId });
+    }
+    else if (view === 'RUAS_EM_EXECUCAO') navigate('DASHBOARD');
     else if (view.startsWith('FORM_')) {
         if (view === 'FORM_CONTRATO') navigate('CONTRATOS');
         else if (view === 'FORM_MEDICAO') navigate('MEDICOES', { selectedContratoId: state.selectedContratoId });
@@ -97,6 +103,7 @@ const App: React.FC = () => {
         {state.view === 'MAPA_GERAL' && <MapaVisualizer ruaId={state.selectedRuaId} onNavigate={navigate} />}
         {state.view === 'RELATORIOS' && <RelatoriosView />}
         {state.view === 'SYNC' && <SyncView />}
+        {state.view === 'RUAS_EM_EXECUCAO' && <RuasEmExecucaoList onNavigate={navigate} />}
         
         {state.view === 'FORM_CONTRATO' && <FormContrato id={state.editingId} onSave={() => navigate('CONTRATOS')} onCancel={goBack} />}
         {state.view === 'FORM_MEDICAO' && <FormMedicao contratoId={state.selectedContratoId!} id={state.editingId} onSave={() => navigate('MEDICOES', { selectedContratoId: state.selectedContratoId })} onCancel={goBack} />}
@@ -108,7 +115,7 @@ const App: React.FC = () => {
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t p-2 flex justify-around shadow-2xl z-50">
         <NavBtn act={state.view==='DASHBOARD'} icon={<Lucide.LayoutDashboard size={20}/>} lab="Início" onClick={()=>navigate('DASHBOARD')}/>
-        <NavBtn act={['CONTRATOS', 'MEDICOES', 'RUAS', 'TRECHOS'].includes(state.view)} icon={<Lucide.ClipboardList size={20}/>} lab="Obras" onClick={()=>navigate('CONTRATOS')}/>
+        <NavBtn act={['CONTRATOS', 'MEDICOES', 'RUAS', 'TRECHOS', 'RUAS_EM_EXECUCAO'].includes(state.view)} icon={<Lucide.ClipboardList size={20}/>} lab="Obras" onClick={()=>navigate('CONTRATOS')}/>
         <NavBtn act={state.view==='MAPA_GERAL'} icon={<Lucide.MapPin size={20}/>} lab="Mapa" onClick={()=>navigate('MAPA_GERAL')}/>
         <NavBtn act={state.view==='SYNC'} icon={<Lucide.Cloud size={20}/>} lab="Sinc" onClick={()=>navigate('SYNC')}/>
       </nav>

@@ -100,6 +100,7 @@ export type AppView =
   | 'MAPA_GERAL'
   | 'RELATORIOS'
   | 'SYNC'
+  | 'RUAS_EM_EXECUCAO'
   | 'FORM_CONTRATO'
   | 'FORM_MEDICAO'
   | 'FORM_RUA'

@@ -176,6 +176,19 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
         </div>
       )}
 
+      {/* Aviso de Rua em Execução (Sem Trechos) */}
+      {items.length === 0 && !loading && (
+        <div className="bg-amber-50 p-8 rounded-[40px] border-2 border-dashed border-amber-200 flex flex-col items-center text-center gap-4 animate-in fade-in zoom-in-95 duration-500">
+           <div className="bg-amber-500 text-white p-5 rounded-full shadow-lg animate-bounce">
+              <Lucide.Clock size={32} />
+           </div>
+           <div>
+              <h3 className="text-xl font-black text-amber-900 uppercase tracking-tighter leading-none mb-1">Logradouro em Execução</h3>
+              <p className="text-[10px] text-amber-600 font-bold uppercase tracking-widest px-8 leading-relaxed">Nenhum trecho técnico foi lançado para esta rua ainda. Clique no botão abaixo para iniciar a medição.</p>
+           </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h2 className="text-slate-400 font-black text-[10px] uppercase tracking-widest">{items.length} Lançamentos de Trechos</h2>
         <button onClick={() => onNavigate('FORM_TRECHO', { selectedRuaId: ruaId })} className="bg-blue-600 text-white px-5 py-3 rounded-full font-black text-xs shadow-lg active:scale-95 transition-all flex items-center gap-2">
@@ -242,12 +255,6 @@ const TrechosList: React.FC<{ ruaId: string, onNavigate: any }> = ({ ruaId, onNa
                   <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Área Total</p>
                   <p className="font-black text-blue-600 text-lg">{selectedTrecho.area.toFixed(2)} m²</p>
                 </div>
-                {selectedTrecho.observacoes && (
-                  <div className="col-span-2 border-t border-slate-200 pt-3">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Observações Técnicas</p>
-                    <p className="text-xs font-bold text-slate-600 leading-relaxed italic">"{selectedTrecho.observacoes}"</p>
-                  </div>
-                )}
               </div>
 
               <div className="flex justify-between items-center px-1">
