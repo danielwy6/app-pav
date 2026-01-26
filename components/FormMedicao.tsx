@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db';
 import { Medicao, Rua, Trecho, ServicoComplementar } from '../types';
-import { Save, Loader2, Calendar, Trash2, AlertCircle } from 'lucide-react';
+import { Save, Loader2, Calendar, Trash2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 interface FormMedicaoProps {
   contratoId: string;
@@ -13,6 +13,7 @@ interface FormMedicaoProps {
 
 const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCancel }) => {
   const [loading, setLoading] = useState(false);
+  const [existingNumeros, setExistingNumeros] = useState<string[]>([]);
   const [formData, setFormData] = useState<Partial<Medicao>>({
     numero: '',
     periodo: new Date().toLocaleDateString('pt-BR'),
@@ -21,34 +22,31 @@ const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCan
   });
 
   useEffect(() => {
-    if (id) {
-      db.getById<Medicao>('medicoes', id).then(m => {
+    const loadData = async () => {
+      const todas = await db.getAll<Medicao>('medicoes');
+      // Filtra medições DO MESMO CONTRATO, exceto a que está sendo editada
+      const numeros = todas
+        .filter(m => m.contratoId === contratoId && m.id !== id)
+        .map(m => m.numero.trim().toUpperCase());
+      setExistingNumeros(numeros);
+
+      if (id) {
+        const m = await db.getById<Medicao>('medicoes', id);
         if (m) setFormData(m);
-      });
-    }
-  }, [id]);
+      }
+    };
+    loadData();
+  }, [id, contratoId]);
+
+  const numeroLimpo = (formData.numero || '').trim().toUpperCase();
+  const isDuplicate = existingNumeros.includes(numeroLimpo);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numeroLimpo = (formData.numero || '').trim().toUpperCase();
-    if (!numeroLimpo) return;
+    if (!numeroLimpo || isDuplicate) return;
 
     setLoading(true);
     try {
-      // Validação: Não permitir medições com mesmo número dentro do mesmo contrato
-      const todasMedicoes = await db.getAll<Medicao>('medicoes');
-      const duplicada = todasMedicoes.find(m => 
-        m.contratoId === contratoId && 
-        m.numero.trim().toUpperCase() === numeroLimpo && 
-        m.id !== id
-      );
-
-      if (duplicada) {
-        alert(`⚠️ MEDIÇÃO DUPLICADA\n\nA medição de número "${numeroLimpo}" já existe neste contrato. Por favor, renomeie a medição para continuar.`);
-        setLoading(false);
-        return;
-      }
-
       const data: Medicao = {
         id: id || crypto.randomUUID(),
         numero: numeroLimpo,
@@ -71,20 +69,7 @@ const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCan
     if (window.confirm("CONFIRMAR EXCLUSÃO?\n\nIsso apagará permanentemente esta medição e todos os seus registros de ruas e fotos.")) {
       setLoading(true);
       try {
-        const todasRuas = await db.getAll<Rua>('ruas');
-        const ruasDaMedicao = todasRuas.filter(r => r.medicaoId === id);
-        const todosTrechos = await db.getAll<Trecho>('trechos');
-        const todosServicos = await db.getAll<ServicoComplementar>('servicos');
-
-        for (const rua of ruasDaMedicao) {
-          const trechosRua = todosTrechos.filter(t => t.ruaId === rua.id);
-          for (const t of trechosRua) await db.delete('trechos', t.id);
-          const servicosRua = todosServicos.filter(s => s.ruaId === rua.id);
-          for (const s of servicosRua) await db.delete('servicos', s.id);
-          await db.delete('ruas', rua.id);
-        }
-
-        await db.delete('medicoes', id);
+        await db.deleteMedicaoCascade(id);
         onSave();
       } catch (err) {
         alert("Erro ao excluir.");
@@ -99,8 +84,8 @@ const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCan
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 space-y-6">
           <div className="flex items-center gap-3 mb-2">
-            <div className="bg-blue-600 text-white p-3 rounded-2xl shadow-lg">
-                <Calendar size={24} />
+            <div className={`p-3 rounded-2xl shadow-lg transition-colors ${isDuplicate ? 'bg-red-600' : 'bg-blue-600'}`}>
+                {isDuplicate ? <AlertTriangle size={24} className="text-white" /> : <Calendar size={24} className="text-white" />}
             </div>
             <div>
                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Dados da Medição</h2>
@@ -117,18 +102,32 @@ const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCan
           </div>
 
           <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-[0.2em] ml-1">Número da Medição</label>
+            <label className={`block text-[10px] font-black uppercase mb-2 tracking-[0.2em] ml-1 transition-colors ${isDuplicate ? 'text-red-500' : 'text-slate-400'}`}>
+              Número da Medição
+            </label>
             <input 
               required
-              className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[28px] focus:ring-4 focus:ring-blue-100 outline-none text-2xl font-black text-slate-800 transition-all"
+              className={`w-full p-6 border rounded-[28px] outline-none text-2xl font-black transition-all ${
+                isDuplicate 
+                ? 'bg-red-50 border-red-500 text-red-700 ring-4 ring-red-100' 
+                : 'bg-slate-50 border-slate-200 focus:ring-4 focus:ring-blue-100 focus:border-blue-400'
+              }`}
               value={formData.numero}
               onChange={e => setFormData(prev => ({ ...prev, numero: e.target.value }))}
               placeholder="Ex: 01"
               autoFocus
             />
-            <p className="mt-3 text-[9px] text-slate-400 font-bold uppercase italic ml-1 flex items-center gap-1">
-                <AlertCircle size={10} /> O sistema não permite medições com o mesmo número no contrato.
-            </p>
+            
+            {isDuplicate ? (
+              <div className="mt-3 flex items-center gap-2 text-red-600 animate-pulse">
+                <AlertCircle size={14} />
+                <p className="text-[10px] font-black uppercase italic">Número já utilizado neste contrato!</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-[9px] text-slate-400 font-bold uppercase italic ml-1 flex items-center gap-1">
+                  <AlertCircle size={10} /> O número deve ser exclusivo neste contrato.
+              </p>
+            )}
           </div>
 
           <div>
@@ -143,8 +142,15 @@ const FormMedicao: React.FC<FormMedicaoProps> = ({ contratoId, id, onSave, onCan
         </div>
 
         <div className="flex gap-4 p-1">
-          <button type="submit" disabled={loading} className="flex-[2] py-5 bg-blue-600 text-white font-black rounded-[28px] shadow-xl shadow-blue-100 flex items-center justify-center gap-3 uppercase text-[10px] tracking-widest active:scale-95 transition-all">
-            {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} SALVAR MEDIÇÃO
+          <button 
+            type="submit" 
+            disabled={loading || isDuplicate} 
+            className={`flex-[2] py-5 text-white font-black rounded-[28px] shadow-xl flex items-center justify-center gap-3 uppercase text-[10px] tracking-widest active:scale-95 transition-all ${
+                isDuplicate ? 'bg-slate-300 shadow-none' : 'bg-blue-600 shadow-blue-100'
+            }`}
+          >
+            {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />} 
+            {isDuplicate ? 'ERRO: DUPLICADO' : 'SALVAR MEDIÇÃO'}
           </button>
           <button type="button" onClick={onCancel} className="flex-1 py-5 bg-white text-slate-500 font-black rounded-[28px] border border-slate-200 uppercase text-[10px] tracking-widest active:bg-slate-50">
             Cancelar
